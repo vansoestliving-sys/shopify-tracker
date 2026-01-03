@@ -107,7 +107,15 @@ export async function POST(request: NextRequest) {
     
     // Log warning if critical data is missing
     if (!customerFirstName) {
-      console.warn(`Order ${shopifyOrder.order_number || shopifyOrder.id} has no first name - this will prevent order tracking by ID + first name`)
+      console.warn(`⚠️ Order ${shopifyOrder.order_number || shopifyOrder.id} has no first name - this will prevent order tracking by ID + first name`)
+      console.warn('First name extraction attempt:', {
+        billing_first_name: shopifyOrder.billing_address?.first_name,
+        shipping_first_name: shopifyOrder.shipping_address?.first_name,
+        customer_first_name: shopifyOrder.customer?.first_name,
+        billing_name: shopifyOrder.billing_address?.name,
+        shipping_name: shopifyOrder.shipping_address?.name,
+        fullCustomerData_firstName: fullCustomerData?.first_name,
+      })
       // Note: Email is optional - tracking works with order ID + first name only
     }
     
@@ -181,9 +189,22 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (orderError) {
-      console.error('Error creating order:', orderError)
-      throw orderError
+      console.error('❌ Error creating order:', orderError)
+      return NextResponse.json(
+        { error: 'Failed to create order', details: orderError.message },
+        { status: 500 }
+      )
     }
+
+    // Log successful order creation
+    console.log('✅ Order created successfully:', {
+      orderId: order?.id,
+      shopifyOrderId: shopifyOrder.id,
+      orderNumber: shopifyOrder.order_number,
+      customerEmail: customerEmail || 'NO EMAIL',
+      customerFirstName: customerFirstName || 'NO FIRST NAME',
+      status: shopifyOrder.financial_status === 'paid' ? 'confirmed' : 'pending',
+    })
 
     // Create order items
     if (shopifyOrder.line_items && shopifyOrder.line_items.length > 0) {
@@ -197,6 +218,8 @@ export async function POST(request: NextRequest) {
       }))
 
       // Try to link products
+      let linkedProducts = 0
+      let unlinkedProducts = 0
       for (const item of orderItems) {
         const { data: product } = await supabase
           .from('products')
@@ -206,7 +229,15 @@ export async function POST(request: NextRequest) {
 
         if (product) {
           item.product_id = product.id
+          linkedProducts++
+        } else {
+          unlinkedProducts++
+          console.warn(`⚠️ Product not found in database: shopify_product_id=${item.shopify_product_id}, name=${item.name}`)
         }
+      }
+      
+      if (unlinkedProducts > 0) {
+        console.log(`ℹ️ ${unlinkedProducts} product(s) not linked - sync products from Shopify first`)
       }
 
       const { error: itemsError } = await supabase
@@ -218,9 +249,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, orderId: order.id })
+    console.log('✅ Webhook processed successfully for order:', shopifyOrder.order_number || shopifyOrder.id)
+    return NextResponse.json({ 
+      success: true, 
+      orderId: order?.id,
+      orderNumber: shopifyOrder.order_number,
+      message: 'Order processed successfully'
+    })
   } catch (error: any) {
-    console.error('Webhook error:', error)
+    console.error('❌ Webhook error:', error)
     return NextResponse.json(
       { error: 'Failed to process webhook', details: error.message },
       { status: 500 }
