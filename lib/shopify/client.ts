@@ -166,7 +166,7 @@ export const fetchShopifyCustomers = async (limit = 250) => {
 export const updateOrderTags = async (orderId: number, tags: string[]) => {
   const order = await fetchShopifyOrder(orderId)
   const existingTags = order.tags ? order.tags.split(', ') : []
-  const newTags = [...new Set([...existingTags, ...tags])]
+  const newTags = Array.from(new Set([...existingTags, ...tags]))
   
   await shopifyApi(`orders/${orderId}.json`, {
     method: 'PUT',

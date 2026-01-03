@@ -73,7 +73,7 @@ export async function POST(
     if (itemsError) throw itemsError
 
     // Get unique order IDs
-    const uniqueOrderIds = [...new Set(orderItems.map((item: any) => item.order_id).filter(Boolean))]
+    const uniqueOrderIds = Array.from(new Set(orderItems.map((item: any) => item.order_id).filter(Boolean)))
 
     if (uniqueOrderIds.length === 0) {
       return NextResponse.json({
