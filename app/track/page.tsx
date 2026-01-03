@@ -14,6 +14,7 @@ interface OrderData {
   customer_first_name: string | null
   delivery_eta: string | null
   status: string
+  tracking_id: string | null
   container: {
     container_id: string
     eta: string
