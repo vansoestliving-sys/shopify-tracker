@@ -19,10 +19,14 @@ function verifyShopifyWebhook(data: string, hmac: string): boolean {
 // Handle new order webhook from Shopify
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔔 Webhook received at:', new Date().toISOString())
+    console.log('🔔 Webhook URL:', request.url)
+    
     const hmac = request.headers.get('x-shopify-hmac-sha256')
     const body = await request.text()
 
     if (!hmac || !verifyShopifyWebhook(body, hmac)) {
+      console.error('❌ Invalid webhook signature')
       return NextResponse.json(
         { error: 'Invalid webhook signature' },
         { status: 401 }
@@ -30,6 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const shopifyOrder = JSON.parse(body)
+    console.log('📦 Processing order:', shopifyOrder.order_number || shopifyOrder.id)
 
     // Only process order creation events
     if (!shopifyOrder.id) {
@@ -250,6 +255,14 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('✅ Webhook processed successfully for order:', shopifyOrder.order_number || shopifyOrder.id)
+    console.log('📊 Order summary:', {
+      orderId: order?.id,
+      orderNumber: shopifyOrder.order_number,
+      hasEmail: !!customerEmail,
+      hasFirstName: !!customerFirstName,
+      itemsCount: shopifyOrder.line_items?.length || 0,
+      containerLinked: false, // Orders don't auto-link - must use "Link Orders" button
+    })
     return NextResponse.json({ 
       success: true, 
       orderId: order?.id,
