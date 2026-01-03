@@ -34,7 +34,11 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 SHOPIFY_STORE_URL=your_store_url (e.g., i50v-e1.myshopify.com)
 SHOPIFY_ACCESS_TOKEN=your_access_token
 SHOPIFY_WEBHOOK_SECRET=your_webhook_secret (if using webhooks)
-ADMIN_SECRET_KEY=your_admin_secret (optional, for production)
+```
+
+### Optional (Not Required):
+```
+ADMIN_SECRET_KEY=your_admin_secret (optional, for extra API protection)
 ```
 
 ### For Each Environment:

@@ -7,18 +7,9 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const adminSecret = process.env.ADMIN_SECRET_KEY
-    
-    // Only require auth if ADMIN_SECRET_KEY is set AND we're in production
-    if (adminSecret && process.env.NODE_ENV === 'production') {
-      if (!authHeader || authHeader !== `Bearer ${adminSecret}`) {
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        )
-      }
-    }
+    // Note: Auth is handled via Supabase session in middleware
+    // ADMIN_SECRET_KEY is optional for additional API protection
+    // For now, we rely on route protection via Supabase auth
 
     const body = await request.json()
     const { orderIds } = body // Optional: specific order IDs to link

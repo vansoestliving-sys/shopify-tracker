@@ -200,9 +200,7 @@ export default function AdminDashboard() {
     try {
       const response = await fetch(`/api/containers/${id}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_ADMIN_SECRET || 'admin-secret'}`,
-        },
+        // Note: Server validates admin via session/auth, not client secret
       })
 
       if (response.ok) {
@@ -248,7 +246,7 @@ export default function AdminDashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_ADMIN_SECRET || 'admin-secret'}`,
+          // Note: Server validates admin via session/auth, not client secret
         },
         body: JSON.stringify({}),
       })
