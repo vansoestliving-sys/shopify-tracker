@@ -39,6 +39,7 @@ export async function GET(request: NextRequest) {
         id,
         shopify_order_number,
         customer_email,
+        customer_first_name,
         delivery_eta,
         status,
         container_id,
@@ -62,6 +63,7 @@ export async function GET(request: NextRequest) {
         order_number: orders[0].shopify_order_number,
         container_id: orders[0].container_id,
         email: orders[0].customer_email,
+        first_name: orders[0].customer_first_name,
         status: orders[0].status,
       })
     }
