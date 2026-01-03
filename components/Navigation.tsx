@@ -24,11 +24,11 @@ export default function Navigation({ user, onLogout, isAdmin = false }: Navigati
     ? [
         { href: '/admin', label: 'Dashboard', icon: Home },
         { href: '/admin/containers', label: 'Containers', icon: Truck },
-        { href: '/admin/orders', label: 'Orders', icon: Package },
+        { href: '/admin/orders', label: 'Bestellingen', icon: Package },
       ]
     : [
-        { href: '/dashboard', label: 'My Orders', icon: Package },
-        { href: '/track', label: 'Track Order', icon: Truck },
+        { href: '/dashboard', label: 'Mijn Bestellingen', icon: Package },
+        { href: '/track', label: 'Volg Bestelling', icon: Truck },
       ]
 
   // Close dropdown when clicking outside
@@ -108,11 +108,11 @@ export default function Navigation({ user, onLogout, isAdmin = false }: Navigati
                       className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 transition-colors"
                     >
                       <Settings className="w-4 h-4" />
-                      <span>Admin Settings</span>
+                      <span>Admin Instellingen</span>
                     </Link>
                     {user && (
                       <div className="px-4 py-2 border-t border-gray-200">
-                        <p className="text-xs text-gray-500 mb-1">Logged in as</p>
+                        <p className="text-xs text-gray-500 mb-1">Ingelogd als</p>
                         <p className="text-sm font-medium text-gray-900 truncate">{user.email}</p>
                       </div>
                     )}
@@ -125,7 +125,7 @@ export default function Navigation({ user, onLogout, isAdmin = false }: Navigati
                         className="flex items-center gap-3 w-full px-4 py-2.5 text-sm text-gray-700 hover:bg-red-50 hover:text-red-600 transition-colors border-t border-gray-200"
                       >
                         <LogOut className="w-4 h-4" />
-                        <span>Logout</span>
+                        <span>Uitloggen</span>
                       </button>
                     )}
                   </div>
@@ -181,7 +181,7 @@ export default function Navigation({ user, onLogout, isAdmin = false }: Navigati
                   className="flex items-center space-x-2 px-3 py-2 rounded-lg text-base font-medium text-gray-700 hover:bg-gray-100"
                 >
                   <Settings className="w-5 h-5" />
-                  <span>Settings</span>
+                  <span>Instellingen</span>
                 </Link>
                 {user && (
                   <div className="px-3 py-2 text-sm text-gray-600">{user.email}</div>

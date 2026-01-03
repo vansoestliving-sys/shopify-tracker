@@ -316,7 +316,7 @@ export default function AdminDashboard() {
                 <Package className="w-5 h-5 text-primary-400" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium truncate">Total Orders</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium truncate">Totaal Bestellingen</p>
                 <p className="text-xl font-bold text-gray-900 mt-0.5 group-hover:text-primary-400 transition-colors">{orders.length}</p>
               </div>
             </div>
@@ -344,7 +344,7 @@ export default function AdminDashboard() {
                 <LinkIcon className="w-5 h-5 text-orange-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium truncate">Orders Not Linked</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium truncate">Bestellingen Niet Gekoppeld</p>
                 <p className="text-xl font-bold text-gray-900 mt-0.5 group-hover:text-orange-600 transition-colors">
                   {orders.filter(o => !o.container_id || o.container_id === '' || o.container_id === null).length}
                 </p>
@@ -360,7 +360,7 @@ export default function AdminDashboard() {
                 <Package className="w-5 h-5 text-green-600" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium truncate">Delivered</p>
+                <p className="text-xs text-gray-500 uppercase tracking-wide font-medium truncate">Geleverd</p>
                 <p className="text-xl font-bold text-gray-900 mt-0.5 group-hover:text-green-600 transition-colors">
                   {orders.filter(o => o.status === 'delivered').length}
                 </p>
@@ -371,24 +371,24 @@ export default function AdminDashboard() {
 
         {error && (
           <div className="mb-6 p-4 glass-card border-yellow-200 rounded-xl">
-            <p className="text-yellow-800 font-semibold mb-2">⚠️ Error</p>
+            <p className="text-yellow-800 font-semibold mb-2">⚠️ Fout</p>
             <p className="text-yellow-700 text-sm mb-2">{error}</p>
             <p className="text-yellow-600 text-xs">
-              Check browser console for details. Make sure you've set up your .env.local file with Supabase credentials.
+              Controleer de browserconsole voor details. Zorg ervoor dat u uw .env.local bestand heeft ingesteld met Supabase referenties.
             </p>
           </div>
         )}
 
         {!error && orders.length === 0 && (
           <div className="mb-6 p-4 glass-card border-blue-200 rounded-xl bg-blue-50/50">
-            <p className="text-blue-800 font-semibold mb-2">ℹ️ No Orders Found</p>
+            <p className="text-blue-800 font-semibold mb-2">ℹ️ Geen Bestellingen Gevonden</p>
             <p className="text-blue-700 text-sm mb-3">
-              Orders are not showing. This could mean:
+              Bestellingen worden niet weergegeven. Dit kan betekenen:
             </p>
             <ul className="text-blue-600 text-xs space-y-1 list-disc list-inside mb-3">
-              <li>Orders haven't been synced from Shopify yet</li>
-              <li>Database tables might not be created</li>
-              <li>Check browser console for API errors</li>
+              <li>Bestellingen zijn nog niet gesynchroniseerd vanuit Shopify</li>
+              <li>Databasetabellen zijn mogelijk niet aangemaakt</li>
+              <li>Controleer de browserconsole op API-fouten</li>
             </ul>
             <button
               onClick={handleSyncOrders}
@@ -396,7 +396,7 @@ export default function AdminDashboard() {
               className="flex items-center space-x-1.5 bg-primary-400 hover:bg-primary-500 disabled:bg-gray-400 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              <span>{syncing ? 'Syncing...' : 'Sync Orders from Shopify'}</span>
+              <span>{syncing ? 'Synchroniseren...' : 'Synchroniseer Bestellingen van Shopify'}</span>
             </button>
           </div>
         )}

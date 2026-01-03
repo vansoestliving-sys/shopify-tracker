@@ -55,7 +55,7 @@ export default function TrackPage() {
 
       setOrder(data.order)
     } catch (err: any) {
-      setError(err.message || 'Order not found. Please check your order ID and first name.')
+      setError(err.message || 'Bestelling niet gevonden. Controleer uw bestelnummer en voornaam.')
     } finally {
       setLoading(false)
     }
@@ -94,10 +94,10 @@ export default function TrackPage() {
         <div className="glass-card rounded-2xl p-8 mb-6 shadow-2xl">
             <div className="text-center mb-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
-                Track Your Order
+                Volg Uw Bestelling
               </h1>
               <p className="text-sm text-gray-600">
-                Enter your order ID and first name to view your order status
+                Voer uw bestelnummer en voornaam in om de status van uw bestelling te bekijken
               </p>
             </div>
 
@@ -105,7 +105,7 @@ export default function TrackPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="orderId" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-                  Order ID
+                  Bestelnummer
                 </label>
                 <input
                   id="orderId"
@@ -117,13 +117,13 @@ export default function TrackPage() {
                   placeholder="123456"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Found in your Shopify order confirmation email
+                  Te vinden in uw Shopify bestelbevestigingsmail
                 </p>
               </div>
 
               <div>
                 <label htmlFor="firstName" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
-                  First Name
+                  Voornaam
                 </label>
                 <input
                   id="firstName"
@@ -148,7 +148,7 @@ export default function TrackPage() {
               disabled={loading}
               className="w-full bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:transform-none"
             >
-              {loading ? 'Searching...' : 'Track Order'}
+              {loading ? 'Zoeken...' : 'Volg Bestelling'}
             </button>
           </form>
         </div>
@@ -176,7 +176,7 @@ export default function TrackPage() {
                     <Package className="w-5 h-5 text-logo-300" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Customer</p>
+                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Klant</p>
                     <p className="font-semibold text-gray-900 text-sm">
                       {order.customer_first_name || 'N/A'}
                     </p>
@@ -205,7 +205,7 @@ export default function TrackPage() {
                         <Calendar className="w-5 h-5 text-logo-300" />
                       </div>
                       <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Estimated Delivery</p>
+                        <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Verwachte Levering</p>
                         <p className="font-semibold text-gray-900 text-sm">
                           {formatDate(order.delivery_eta)}
                         </p>
@@ -232,12 +232,12 @@ export default function TrackPage() {
 
             {/* Order Items */}
             <div className="border-t-2 border-gray-200 pt-6">
-              <h3 className="text-sm font-bold text-gray-900 mb-4 uppercase tracking-wide">Order Items</h3>
+              <h3 className="text-sm font-bold text-gray-900 mb-4 uppercase tracking-wide">Bestelde Artikelen</h3>
               <div className="space-y-2">
                 {order.items.map((item, idx) => (
                   <div key={idx} className="flex justify-between items-center py-2.5 px-3 bg-gray-50 rounded-lg">
                     <span className="text-sm font-medium text-gray-900">{item.name}</span>
-                    <span className="text-xs text-gray-600 bg-white px-2 py-1 rounded font-semibold">Qty: {item.quantity}</span>
+                    <span className="text-xs text-gray-600 bg-white px-2 py-1 rounded font-semibold">Aantal: {item.quantity}</span>
                   </div>
                 ))}
               </div>
@@ -247,7 +247,7 @@ export default function TrackPage() {
 
         <div className="mt-6 text-center">
           <Link href="/" className="inline-flex items-center text-gray-600 hover:text-gray-900 text-sm font-medium transition-colors">
-            ← Back to home
+            ← Terug naar home
           </Link>
         </div>
       </div>

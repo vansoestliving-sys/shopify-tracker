@@ -81,7 +81,7 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
       <div className="glass-strong rounded-2xl p-6 max-w-md w-full max-h-[85vh] overflow-y-auto mt-12">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold text-gray-900">
-            Edit Order #{order.shopify_order_number || 'N/A'}
+            Bestelling Bewerken #{order.shopify_order_number || 'N/A'}
           </h3>
           <button
             onClick={onClose}
@@ -94,7 +94,7 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Customer Email
+              Klant E-mail
             </label>
             <input
               type="email"
@@ -106,17 +106,17 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Customer First Name <span className="text-red-500">*</span>
+              Klant Voornaam <span className="text-red-500">*</span>
             </label>
             <input
               type="text"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              placeholder="Enter first name for tracking"
+              placeholder="Voer voornaam in voor tracking"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-400"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Required for order tracking by ID + first name
+              Vereist voor bestelling tracking op ID + voornaam
             </p>
           </div>
 
@@ -139,7 +139,7 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Delivery ETA
+              Verwachte Levering
             </label>
             <input
               type="date"
@@ -158,7 +158,7 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
               onChange={(e) => setContainerId(e.target.value)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-400"
             >
-              <option value="">No container</option>
+              <option value="">Geen container</option>
               {containers.map((container) => (
                 <option key={container.id} value={container.id}>
                   {container.container_id}
@@ -172,7 +172,7 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
               onClick={onClose}
               className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
             >
-              Cancel
+              Annuleren
             </button>
             <button
               onClick={handleSave}
@@ -180,7 +180,7 @@ export default function OrderEditModal({ order, onClose, onSave, containers }: O
               className="px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 disabled:bg-gray-400 flex items-center space-x-2"
             >
               <Save className="w-4 h-4" />
-              <span>{loading ? 'Saving...' : 'Save'}</span>
+              <span>{loading ? 'Opslaan...' : 'Opslaan'}</span>
             </button>
           </div>
         </div>

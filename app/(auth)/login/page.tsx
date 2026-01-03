@@ -62,10 +62,10 @@ export default function LoginPage() {
         <div className="text-center mb-6">
           <h1 className="text-xl font-bold text-gray-900 mb-2 flex items-center justify-center space-x-2">
             <Shield className="w-5 h-5" />
-            <span>Admin Login</span>
+            <span>Admin Inloggen</span>
           </h1>
           <p className="text-xs text-gray-600">
-            Login to access the admin dashboard
+            Log in om toegang te krijgen tot het admin dashboard
           </p>
         </div>
 
@@ -120,19 +120,19 @@ export default function LoginPage() {
             disabled={loading}
             className="w-full bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:transform-none"
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Inloggen...' : 'Inloggen'}
           </button>
         </form>
 
         <div className="mt-6 text-center">
           <Link href="/track" className="text-primary-400 hover:text-primary-500 text-sm font-medium">
-            Track your order using Order ID →
+            Volg uw bestelling met bestelnummer →
           </Link>
         </div>
 
         <div className="mt-6 text-center">
           <Link href="/" className="text-gray-600 hover:text-gray-900 text-sm font-medium">
-            ← Back to home
+            ← Terug naar home
           </Link>
         </div>
       </div>

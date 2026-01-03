@@ -21,10 +21,10 @@ export default function HomePage() {
       <div className="max-w-lg w-full glass-card rounded-2xl p-6 text-center relative z-10 shadow-2xl">
         <div className="mb-5">
           <h1 className="text-xl font-bold text-gray-900 mb-1.5">
-            Order Tracking Portal
+            Bestelling Volgen Portaal
           </h1>
           <p className="text-xs text-gray-600">
-            Track your order delivery status in real-time
+            Volg de leveringsstatus van uw bestelling in real-time
           </p>
         </div>
         
@@ -33,14 +33,14 @@ export default function HomePage() {
             href="/track"
             className="inline-block bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 text-white font-semibold py-2.5 px-8 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 text-sm"
           >
-            Track Your Order
+            Volg Uw Bestelling
           </Link>
         </div>
 
         {/* Decorative Elements */}
         <div className="pt-4 border-t border-gray-200/50">
           <p className="text-xs text-gray-500">
-            Secure • Private • Real-time Updates
+            Veilig • Privé • Real-time Updates
           </p>
         </div>
       </div>

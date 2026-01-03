@@ -211,7 +211,7 @@ export default function OrdersPage() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex justify-between items-center mb-4">
             <h1 className="text-lg font-bold text-gray-900">
-              {statusFilter === 'unlinked' ? 'Orders Not Linked' : 'All Orders'}
+              {statusFilter === 'unlinked' ? 'Bestellingen Niet Gekoppeld' : 'Alle Bestellingen'}
             </h1>
             <div className="flex items-center space-x-2">
               <button
@@ -223,7 +223,7 @@ export default function OrdersPage() {
                 title="Refresh orders and containers"
               >
                 <RefreshCw className="w-4 h-4" />
-                Refresh
+                Vernieuwen
               </button>
               {selectedOrders.length > 0 && (
               <button
@@ -238,24 +238,24 @@ export default function OrdersPage() {
 
         {error && (
           <div className="mb-6 p-4 glass-card border-yellow-200 rounded-xl">
-            <p className="text-yellow-800 font-semibold mb-2">⚠️ Error</p>
+            <p className="text-yellow-800 font-semibold mb-2">⚠️ Fout</p>
             <p className="text-yellow-700 text-sm mb-2">{error}</p>
             <p className="text-yellow-600 text-xs">
-              Check browser console (F12) for detailed error information.
+              Controleer de browserconsole (F12) voor gedetailleerde foutinformatie.
             </p>
           </div>
         )}
 
         {!error && orders.length === 0 && !loading && (
           <div className="mb-6 p-4 glass-card border-blue-200 rounded-xl bg-blue-50/50">
-            <p className="text-blue-800 font-semibold mb-2">ℹ️ No Orders Found</p>
+            <p className="text-blue-800 font-semibold mb-2">ℹ️ Geen Bestellingen Gevonden</p>
             <p className="text-blue-700 text-sm mb-3">
-              No orders are showing. Possible reasons:
+              Er worden geen bestellingen weergegeven. Mogelijke redenen:
             </p>
             <ul className="text-blue-600 text-xs space-y-1 list-disc list-inside mb-3">
-              <li>Orders haven't been synced from Shopify</li>
-              <li>Database tables might not exist (run migration)</li>
-              <li>Check browser console for API errors</li>
+              <li>Bestellingen zijn nog niet gesynchroniseerd vanuit Shopify</li>
+              <li>Databasetabellen bestaan mogelijk niet (voer migratie uit)</li>
+              <li>Controleer de browserconsole op API-fouten</li>
             </ul>
             <div className="flex gap-2">
               <button
