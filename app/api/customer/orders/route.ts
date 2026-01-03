@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     // Additional security: filter results by email (double-check)
     const filteredOrders = (orders || []).filter(order => 
-      order.customer_email?.toLowerCase() === user.email.toLowerCase()
+      order.customer_email?.toLowerCase() === user.email?.toLowerCase()
     )
 
     return NextResponse.json({ orders: filteredOrders })
