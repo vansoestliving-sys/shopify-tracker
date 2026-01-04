@@ -161,11 +161,12 @@ export default function AdminDashboard() {
     }
   }
 
-  const handleSyncOrders = async () => {
+  const handleSyncOrders = async (fetchAll = false) => {
     setSyncing(true)
     setError(null)
     try {
-      const response = await fetch('/api/shopify/sync', {
+      const url = fetchAll ? '/api/shopify/sync?fetchAll=true' : '/api/shopify/sync'
+      const response = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -457,13 +458,22 @@ export default function AdminDashboard() {
                 <span>{syncingProducts ? 'Syncing...' : 'Products'}</span>
               </button>
               <button
-                onClick={handleSyncOrders}
+                onClick={() => handleSyncOrders(false)}
                 disabled={syncing}
                 className="flex items-center space-x-1.5 bg-primary-400 hover:bg-primary-500 disabled:bg-gray-400 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-                title="Manually sync orders from Shopify"
+                title="Sync recent orders from Shopify (last 250)"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
                 <span>{syncing ? 'Syncing...' : 'Orders'}</span>
+              </button>
+              <button
+                onClick={() => handleSyncOrders(true)}
+                disabled={syncing}
+                className="flex items-center space-x-1.5 bg-[#FF914D] hover:bg-[#C4885E] disabled:bg-gray-400 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+                title="Sync ALL orders from Shopify (may take 5-10 minutes)"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                <span>{syncing ? 'Syncing All...' : 'Sync All'}</span>
               </button>
             </div>
           </div>

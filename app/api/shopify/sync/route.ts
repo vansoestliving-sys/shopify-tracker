@@ -47,9 +47,15 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient()
 
     // Fetch orders from Shopify
+    // Check if user wants to fetch ALL orders (pagination)
+    const { searchParams } = new URL(request.url)
+    const fetchAll = searchParams.get('fetchAll') === 'true'
+    
     let shopifyOrders
     try {
-      shopifyOrders = await fetchShopifyOrders(250)
+      console.log(fetchAll ? '🔄 Fetching ALL orders from Shopify (with pagination)...' : '🔄 Fetching recent orders from Shopify...')
+      shopifyOrders = await fetchShopifyOrders(250, undefined, fetchAll)
+      console.log(`✅ Fetched ${shopifyOrders.length} orders from Shopify`)
     } catch (shopifyError: any) {
       console.error('Shopify API error:', shopifyError)
       return NextResponse.json(

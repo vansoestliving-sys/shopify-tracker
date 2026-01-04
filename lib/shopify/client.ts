@@ -43,14 +43,44 @@ export const shopifyApi = async (endpoint: string, options: RequestInit = {}) =>
 
 // Fetch orders from Shopify
 // Request all fields including customer and billing/shipping addresses
-export const fetchShopifyOrders = async (limit = 250, sinceId?: number) => {
-  let url = `orders.json?limit=${limit}&status=any&fields=id,order_number,email,customer,financial_status,total_price,currency,line_items,billing_address,shipping_address,created_at,updated_at`
-  if (sinceId) {
-    url += `&since_id=${sinceId}`
+// Supports pagination to fetch ALL orders
+export const fetchShopifyOrders = async (limit = 250, sinceId?: number, fetchAll = false) => {
+  let allOrders: any[] = []
+  let currentSinceId = sinceId
+  let hasMore = true
+  let pageCount = 0
+  const maxPages = 100 // Safety limit to prevent infinite loops
+
+  while (hasMore && pageCount < maxPages) {
+    let url = `orders.json?limit=${limit}&status=any&fields=id,order_number,email,customer,financial_status,total_price,currency,line_items,billing_address,shipping_address,created_at,updated_at`
+    if (currentSinceId) {
+      url += `&since_id=${currentSinceId}`
+    }
+    
+    const data = await shopifyApi(url)
+    const orders = data.orders || []
+    
+    if (orders.length === 0) {
+      hasMore = false
+      break
+    }
+
+    allOrders = [...allOrders, ...orders]
+    
+    // For pagination, use the last order's ID as since_id
+    if (fetchAll && orders.length === limit) {
+      // Get the last (oldest) order ID for next page
+      const lastOrder = orders[orders.length - 1]
+      currentSinceId = lastOrder.id
+      pageCount++
+      console.log(`📦 Fetched page ${pageCount}: ${orders.length} orders (total: ${allOrders.length})`)
+    } else {
+      hasMore = false
+    }
   }
-  
-  const data = await shopifyApi(url)
-  return data.orders || []
+
+  console.log(`✅ Total orders fetched: ${allOrders.length}`)
+  return allOrders
 }
 
 // Fetch a single order
