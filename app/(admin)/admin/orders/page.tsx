@@ -254,6 +254,13 @@ export default function OrdersPage() {
             </h1>
             <div className="flex items-center space-x-2">
               <button
+                onClick={() => setShowCSVImportModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-md text-sm font-medium transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                CSV Importeren
+              </button>
+              <button
                 onClick={() => setShowAddOrderModal(true)}
                 className="flex items-center gap-2 px-3 py-1.5 bg-[#FF914D] hover:bg-[#C4885E] text-white rounded-md text-sm font-medium transition-colors"
               >
