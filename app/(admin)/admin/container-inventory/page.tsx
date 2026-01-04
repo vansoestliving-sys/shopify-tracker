@@ -23,7 +23,7 @@ interface ContainerProduct {
     id: string
     name: string
     shopify_product_id: number | null
-  }
+  } | null
 }
 
 interface ContainerInventory {
@@ -108,9 +108,12 @@ export default function ContainerInventoryPage() {
 
       // Build inventory with allocated quantities
       const inventoryData: ContainerInventory[] = (containers || []).map((container: any) => {
-        const containerProds = (containerProducts || []).filter(
+        const containerProds = ((containerProducts || []) as any[]).filter(
           (cp: any) => cp.container_id === container.id
-        )
+        ).map((cp: any) => ({
+          ...cp,
+          product: Array.isArray(cp.product) ? cp.product[0] : cp.product,
+        }))
 
         // Get orders linked to this container
         const containerOrders = (orders || []).filter(
