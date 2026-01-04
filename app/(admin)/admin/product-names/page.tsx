@@ -118,14 +118,28 @@ export default function ProductNamesPage() {
 
     setNormalizing(true)
     try {
+      // First get all items that need updating
+      const { data: itemsToUpdate, error: fetchError } = await supabase
+        .from('order_items')
+        .select('id, name')
+        .ilike('name', '%draaifunctie%')
+        .not('name', 'ilike', '%180 graden%')
+
+      if (fetchError) throw fetchError
+
+      if (!itemsToUpdate || itemsToUpdate.length === 0) {
+        toast.info('Geen items gevonden om bij te werken')
+        return
+      }
+
+      // Update each item
       const { error } = await supabase
         .from('order_items')
         .update({ 
           name: '180 graden draaifunctie - met back to place mechanisme',
           updated_at: new Date().toISOString(),
         })
-        .ilike('name', '%draaifunctie%')
-        .not('name', 'ilike', '%180 graden%')
+        .in('id', itemsToUpdate.map((item: any) => item.id))
 
       if (error) throw error
 
