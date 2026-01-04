@@ -2,27 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/server'
 
 // Smart allocation: Links orders chronologically based on container product quantities
+// Note: Route is protected by middleware, so only authenticated admins can access
 export async function POST(request: NextRequest) {
   try {
     console.log('🚀 Starting smart order allocation...')
     
     const supabase = createSupabaseAdminClient()
-
-    // Verify authentication (optional, since route is protected by middleware)
-    try {
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
-      if (authError || !user) {
-        console.error('Auth error:', authError)
-        return NextResponse.json(
-          { error: 'Unauthorized' },
-          { status: 401 }
-        )
-      }
-      console.log('✅ User authenticated:', user.email)
-    } catch (authErr) {
-      console.error('Auth check failed:', authErr)
-      // Continue anyway, admin client doesn't need user auth
-    }
+    console.log('✅ Admin client initialized')
 
     // 1. Get all containers with their products and quantities
     const { data: containers, error: containersError } = await supabase
