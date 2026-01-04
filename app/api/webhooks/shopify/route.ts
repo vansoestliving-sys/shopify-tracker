@@ -298,42 +298,43 @@ export async function POST(request: NextRequest) {
                   .in('product_id', productDbIds)
 
                 if (containerProducts && containerProducts.length > 0) {
-                // Group by container_id to find which container has the most matching products
-                const containerMatches: Record<string, number> = {}
-                containerProducts.forEach((cp: any) => {
-                  const containerId = cp.container_id
-                  if (containerId) {
-                    containerMatches[containerId] = (containerMatches[containerId] || 0) + 1
-                  }
-                })
+                  // Group by container_id to find which container has the most matching products
+                  const containerMatches: Record<string, number> = {}
+                  containerProducts.forEach((cp: any) => {
+                    const containerId = cp.container_id
+                    if (containerId) {
+                      containerMatches[containerId] = (containerMatches[containerId] || 0) + 1
+                    }
+                  })
 
-                // Find container with most matches
-                const bestMatch = Object.entries(containerMatches).sort((a, b) => b[1] - a[1])[0]
-                
-                if (bestMatch) {
-                  const [containerId, matchCount] = bestMatch
+                  // Find container with most matches
+                  const bestMatch = Object.entries(containerMatches).sort((a, b) => b[1] - a[1])[0]
                   
-                  // Get container ETA
-                  const { data: container } = await supabase
-                    .from('containers')
-                    .select('id, eta')
-                    .eq('id', containerId)
-                    .single()
+                  if (bestMatch) {
+                    const [containerId, matchCount] = bestMatch
+                    
+                    // Get container ETA
+                    const { data: container } = await supabase
+                      .from('containers')
+                      .select('id, eta')
+                      .eq('id', containerId)
+                      .single()
 
-                  if (container) {
-                    // Link order to container
-                    const { error: linkError } = await supabase
-                      .from('orders')
-                      .update({
-                        container_id: containerId,
-                        delivery_eta: container.eta,
-                      })
-                      .eq('id', order.id)
+                    if (container) {
+                      // Link order to container
+                      const { error: linkError } = await supabase
+                        .from('orders')
+                        .update({
+                          container_id: containerId,
+                          delivery_eta: container.eta,
+                        })
+                        .eq('id', order.id)
 
-                    if (!linkError) {
-                      console.log(`✅ Auto-linked order to container ${containerId} (${matchCount} product(s) matched)`)
-                    } else {
-                      console.warn('⚠️ Failed to auto-link order:', linkError)
+                      if (!linkError) {
+                        console.log(`✅ Auto-linked order to container ${containerId} (${matchCount} product(s) matched)`)
+                      } else {
+                        console.warn('⚠️ Failed to auto-link order:', linkError)
+                      }
                     }
                   }
                 }
