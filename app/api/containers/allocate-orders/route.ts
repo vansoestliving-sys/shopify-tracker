@@ -189,12 +189,23 @@ export async function POST(request: NextRequest) {
           eta: container?.eta || null,
         })
       } else {
+        // Log why this order was skipped
+        const productsNeeded = Object.keys(requiredProducts).join(', ')
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
           reason: 'insufficient_stock',
+          productsNeeded,
         })
       }
+    }
+    
+    // Log sample of skipped orders with their required products
+    if (skipped.length > 0) {
+      console.log('⚠️ Sample skipped orders (first 10):', skipped.slice(0, 10).map(s => ({
+        orderNumber: s.orderNumber,
+        productsNeeded: s.productsNeeded,
+      })))
     }
 
     console.log('✅ Allocation complete:', {
