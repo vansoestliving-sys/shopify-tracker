@@ -51,13 +51,23 @@ export default function ProductNamesPage() {
       }
 
       console.log('Fetched order_items:', data?.length || 0, 'items')
+      console.log('Sample data:', data?.slice(0, 3))
+
+      if (!data || data.length === 0) {
+        console.warn('No order_items found in database')
+        toast.error('Geen order_items gevonden in database. Controleer of er data is.')
+        setProductNames([])
+        return
+      }
 
       // Count occurrences and group (filter out empty names)
       const nameMap = new Map<string, number>()
-      data?.forEach((item: any) => {
+      data.forEach((item: any) => {
         const name = item.name || ''
         if (name && name.trim().length > 0) {
           nameMap.set(name, (nameMap.get(name) || 0) + 1)
+        } else {
+          console.warn('Empty name found:', item)
         }
       })
 
