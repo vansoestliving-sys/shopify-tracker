@@ -14,14 +14,21 @@ export async function POST(request: NextRequest) {
     const { data: containers, error: containersError } = await supabase
       .from('containers')
       .select('id, container_id, eta')
-      .order('created_at', { ascending: true }) // Process containers in order
 
     if (containersError) {
       console.error('Error fetching containers:', containersError)
       throw containersError
     }
 
-    console.log(`📦 Found ${containers?.length || 0} containers`)
+    // Sort containers by container_id (extract number for proper sorting: LX1414, LX1422, etc.)
+    const sortedContainers = (containers || []).sort((a: any, b: any) => {
+      const aNum = parseInt(a.container_id?.match(/\d+/)?.[0] || '0')
+      const bNum = parseInt(b.container_id?.match(/\d+/)?.[0] || '0')
+      return aNum - bNum
+    })
+
+    console.log(`📦 Found ${sortedContainers.length} containers (sorted by container_id)`)
+    console.log('Container order:', sortedContainers.map((c: any) => c.container_id).join(', '))
 
     // 2. Get all container products with quantities
     const { data: containerProducts, error: cpError } = await supabase
@@ -47,10 +54,13 @@ export async function POST(request: NextRequest) {
     console.log(`📦 Found ${containerProducts?.length || 0} container products`)
 
     // 3. Build container inventory: { containerId: { productName: { quantity, productId } } }
+    // Also create ordered array of container IDs for sequential processing
     const containerInventory: Record<string, Record<string, { quantity: number, productId: string, shopifyId?: number }>> = {}
+    const orderedContainerIds: string[] = []
     
-    containers?.forEach((c: any) => {
+    sortedContainers.forEach((c: any) => {
       containerInventory[c.id] = {}
+      orderedContainerIds.push(c.id)
     })
 
     containerProducts?.forEach((cp: any) => {
@@ -126,7 +136,7 @@ export async function POST(request: NextRequest) {
     // 6. Allocate orders to containers based on available quantities
     const allocations: { orderId: string, containerId: string, eta: string | null }[] = []
     const skipped: { orderId: string, orderNumber: string, reason: string, productsNeeded?: string }[] = []
-    const containerMap = new Map(containers?.map((c: any) => [c.id, c]))
+    const containerMap = new Map(sortedContainers.map((c: any) => [c.id, c]))
 
     for (const order of orders) {
       const items = orderItemsMap[order.id] || []
@@ -168,10 +178,11 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Find the best container that has enough stock for ALL products in this order
+      // Find the FIRST container (in sequential order) that has enough stock for ALL products
+      // This ensures orders are allocated to containers 1 → 2 → 3 → 4... in sequence
       let allocatedContainer: string | null = null
 
-      for (const containerId of Object.keys(containerInventory)) {
+      for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
         let canFulfill = true
 
@@ -186,7 +197,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (canFulfill) {
-          // This container can fulfill the order - allocate it
+          // This container can fulfill the order - allocate it (first match in sequence)
           allocatedContainer = containerId
 
           // Deduct quantities from inventory
@@ -194,7 +205,7 @@ export async function POST(request: NextRequest) {
             containerInventory[containerId][productName].quantity -= requiredQty
           }
 
-          break // Stop looking for containers
+          break // Stop looking - we found the first container in sequence that can fulfill
         }
       }
 
