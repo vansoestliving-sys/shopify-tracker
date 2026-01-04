@@ -16,6 +16,11 @@ export async function GET(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient()
 
+    // Log Supabase connection details (without exposing secrets)
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    console.log('🔗 Connecting to Supabase:', supabaseUrl?.substring(0, 30) + '...')
+    console.log('🔑 Service role key exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+
     // Test database connection first
     const { error: testError } = await supabase.from('orders').select('id').limit(1)
     
