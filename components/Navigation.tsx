@@ -25,6 +25,8 @@ export default function Navigation({ user, onLogout, isAdmin = false }: Navigati
         { href: '/admin', label: 'Dashboard', icon: Home },
         { href: '/admin/containers', label: 'Containers', icon: Truck },
         { href: '/admin/orders', label: 'Bestellingen', icon: Package },
+        { href: '/admin/container-inventory', label: 'Voorraad', icon: Package },
+        { href: '/admin/product-names', label: 'Productnamen', icon: Settings },
       ]
     : [
         { href: '/dashboard', label: 'Mijn Bestellingen', icon: Package },
