@@ -11,6 +11,10 @@ import { ToastContainer } from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
 import { ContainerSkeleton } from '@/components/LoadingSkeleton'
 
+// Disable Next.js caching - always render dynamically
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
 interface Container {
   id: string
   container_id: string
