@@ -174,16 +174,29 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
               order.customer_first_name = nameParts[0] || value
             }
           } else if (header === 'Financial Status') {
+            // Skip refunded or cancelled orders
+            const financialStatus = value.toLowerCase()
+            if (financialStatus === 'refunded' || financialStatus === 'cancelled') {
+              // Mark order to skip
+              order._skip = true
+              return // Skip this order
+            }
+            
             // Map financial status to our status
             const statusMap: Record<string, string> = {
               'paid': 'confirmed',
               'authorized': 'confirmed',
               'pending': 'pending',
-              'refunded': 'cancelled',
               'partially_paid': 'pending',
               'partially_refunded': 'confirmed',
             }
-            order.status = statusMap[value.toLowerCase()] || 'pending'
+            order.status = statusMap[financialStatus] || 'pending'
+          } else if (header === 'Cancelled at') {
+            // Skip orders with cancellation date
+            if (value && value.trim() !== '') {
+              order._skip = true
+              return // Skip this order
+            }
           } else if (header === 'Total') {
             order.total_amount = parseFloat(value) || null
           } else if (header === 'Currency') {
@@ -223,6 +236,12 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
     // Convert map to array and validate
     const orders: any[] = []
     for (const [orderNumber, order] of ordersMap.entries()) {
+      // Skip refunded/cancelled orders
+      if (order._skip) {
+        console.log(`Skipping order ${orderNumber}: refunded or cancelled`)
+        continue
+      }
+      
       // Ensure required fields
       if (!order.shopify_order_number) {
         console.warn(`Skipping order ${orderNumber}: missing order number`)
