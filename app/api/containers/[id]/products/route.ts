@@ -109,3 +109,39 @@ export async function POST(
   }
 }
 
+// DELETE remove product from container
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const url = new URL(request.url)
+    const productId = url.searchParams.get('product_id')
+    
+    if (!productId) {
+      return NextResponse.json(
+        { error: 'product_id is required' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = createSupabaseAdminClient()
+
+    const { error } = await supabase
+      .from('container_products')
+      .delete()
+      .eq('container_id', params.id)
+      .eq('product_id', productId)
+
+    if (error) throw error
+
+    return NextResponse.json({ success: true })
+  } catch (error: any) {
+    console.error('Error removing product from container:', error)
+    return NextResponse.json(
+      { error: 'Failed to remove product from container', details: error.message },
+      { status: 500 }
+    )
+  }
+}
+

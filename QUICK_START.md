@@ -27,6 +27,18 @@
 6. **Edit** → Add products to container
 7. Click **Link Orders** to auto-link existing orders
 
+### When You Need to Add an Order Manually
+1. Go to **Orders** page
+2. Click **Bestelling Toevoegen** (Add Order) button
+3. Fill in:
+   - Order number (required)
+   - Customer first name (required for tracking)
+   - Customer email (optional)
+   - Products (add with quantities)
+   - Container (optional - will auto-link if products match)
+4. Click **Bestelling Toevoegen**
+5. **Result:** Order is created and auto-linked to container if products match
+
 ### When Customer Asks About Their Order
 1. Go to **Orders** page
 2. Search order number (e.g., `1745`)

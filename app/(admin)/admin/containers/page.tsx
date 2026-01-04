@@ -317,7 +317,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
   const [status, setStatus] = useState(container?.status || 'in_transit')
   const [loading, setLoading] = useState(false)
   const [products, setProducts] = useState<Array<{id: string, name: string, shopify_product_id: number}>>([])
-  const [selectedProducts, setSelectedProducts] = useState<string[]>([])
+  const [productQuantities, setProductQuantities] = useState<Record<string, number>>({}) // product_id -> quantity
   const [loadingProducts, setLoadingProducts] = useState(true)
 
   useEffect(() => {
@@ -344,7 +344,15 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
       const response = await fetch(`/api/containers/${containerId}/products`)
       const data = await response.json()
       if (data.products) {
-        setSelectedProducts(data.products.map((p: any) => p.product?.id || p.product_id).filter(Boolean))
+        // Build quantities map: product_id -> quantity
+        const quantities: Record<string, number> = {}
+        data.products.forEach((p: any) => {
+          const productId = p.product?.id || p.product_id
+          if (productId) {
+            quantities[productId] = p.quantity || 1
+          }
+        })
+        setProductQuantities(quantities)
       }
     } catch (error) {
       console.error('Error fetching container products:', error)
@@ -382,9 +390,18 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
       const data = await response.json()
       const savedContainerId = data.container?.id || container?.id
 
-      // Link products to container
-      if (selectedProducts.length > 0 && savedContainerId) {
-        for (const productId of selectedProducts) {
+      // Update products in container with quantities
+      // First, get existing products to know what to remove
+      const existingProductsResponse = await fetch(`/api/containers/${savedContainerId}/products`)
+      const existingProductsData = await existingProductsResponse.json()
+      const existingProductIds = (existingProductsData.products || []).map((p: any) => p.product?.id || p.product_id).filter(Boolean)
+      
+      // Products to add/update (with quantity > 0)
+      const productIds = Object.keys(productQuantities).filter(id => productQuantities[id] > 0)
+      
+      // Update/add products with quantities
+      if (productIds.length > 0 && savedContainerId) {
+        for (const productId of productIds) {
           try {
             await fetch(`/api/containers/${savedContainerId}/products`, {
               method: 'POST',
@@ -393,11 +410,25 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
               },
               body: JSON.stringify({
                 product_id: productId,
-                quantity: 1,
+                quantity: productQuantities[productId] || 1,
               }),
             })
           } catch (error) {
             console.error('Error linking product:', error)
+          }
+        }
+      }
+      
+      // Remove products that were unchecked (exist in DB but not in current selection)
+      const productsToRemove = existingProductIds.filter((id: string) => !productIds.includes(id))
+      if (productsToRemove.length > 0 && savedContainerId) {
+        for (const productId of productsToRemove) {
+          try {
+            await fetch(`/api/containers/${savedContainerId}/products?product_id=${productId}`, {
+              method: 'DELETE',
+            })
+          } catch (error) {
+            console.error('Error removing product:', error)
           }
         }
       }
@@ -415,7 +446,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="glass-strong rounded-2xl p-6 max-w-md w-full max-h-[90vh] overflow-y-auto">
         <h3 className="text-xl font-bold text-gray-900 mb-4">
-          {container ? 'Edit Container' : 'Add Container'}
+          {container ? 'Container Bewerken' : 'Container Toevoegen'}
         </h3>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -464,37 +495,59 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Products in Container
+              Producten in Container (met hoeveelheden)
             </label>
             {loadingProducts ? (
-              <p className="text-sm text-gray-500">Loading products...</p>
+              <p className="text-sm text-gray-500">Producten laden...</p>
             ) : products.length === 0 ? (
               <p className="text-sm text-gray-500 mb-2">
-                No products found. Products will be synced from Shopify when orders are synced.
+                Geen producten gevonden. Synchroniseer producten vanuit Shopify.
               </p>
             ) : (
-              <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-lg p-2">
-                {products.map((product) => (
-                  <label key={product.id} className="flex items-center space-x-2 py-1 hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedProducts.includes(product.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setSelectedProducts([...selectedProducts, product.id])
-                        } else {
-                          setSelectedProducts(selectedProducts.filter(id => id !== product.id))
-                        }
-                      }}
-                      className="rounded border-gray-300 text-primary-400 focus:ring-primary-400"
-                    />
-                    <span className="text-sm text-gray-700">{product.name}</span>
-                  </label>
-                ))}
+              <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg p-3 space-y-2">
+                {products.map((product) => {
+                  const quantity = productQuantities[product.id] || 0
+                  const isSelected = quantity > 0
+                  return (
+                    <div key={product.id} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setProductQuantities({ ...productQuantities, [product.id]: 1 })
+                          } else {
+                            const newQuantities = { ...productQuantities }
+                            delete newQuantities[product.id]
+                            setProductQuantities(newQuantities)
+                          }
+                        }}
+                        className="rounded border-gray-300 text-primary-400 focus:ring-primary-400"
+                      />
+                      <span className="flex-1 text-sm text-gray-700">{product.name}</span>
+                      {isSelected && (
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs text-gray-600">Aantal:</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={quantity}
+                            onChange={(e) => {
+                              const newQty = parseInt(e.target.value) || 1
+                              setProductQuantities({ ...productQuantities, [product.id]: newQty })
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-400"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
-            <p className="text-xs text-gray-500 mt-1">
-              Select products that are in this container. Orders with these products will be linked automatically.
+            <p className="text-xs text-gray-500 mt-2">
+              Selecteer producten en geef de hoeveelheid op die in deze container zit. Bestellingen met deze producten worden automatisch gekoppeld.
             </p>
           </div>
 
@@ -504,14 +557,14 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
               onClick={onClose}
               className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
             >
-              Cancel
+              Annuleren
             </button>
             <button
               type="submit"
               disabled={loading}
               className="px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 disabled:bg-gray-400"
             >
-              {loading ? 'Saving...' : 'Save'}
+              {loading ? 'Opslaan...' : 'Opslaan'}
             </button>
           </div>
         </form>

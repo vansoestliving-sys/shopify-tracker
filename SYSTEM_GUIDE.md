@@ -266,7 +266,35 @@ https://shopify-tracker-umber.vercel.app/admin
 
 ---
 
-### Task 5: Fix Old Orders Missing First Name
+### Task 5: Manually Add an Order
+**When:** Order wasn't synced from Shopify, or you need to add a test order
+
+**Steps:**
+1. Go to **Orders** page
+2. Click **Bestelling Toevoegen** (Add Order) button (top right)
+3. Fill in the form:
+   - **Bestelnummer** (Order Number): Required (e.g., `1750`)
+   - **Klant E-mail**: Optional
+   - **Klant Voornaam** (First Name): **Required** for tracking
+   - **Status**: Select from dropdown (default: In afwachting)
+   - **Container**: Optional - leave empty for auto-linking, or select manually
+   - **Leverings-ETA**: Optional - will be copied from container if linked
+   - **Totaalbedrag**: Optional
+   - **Producten**: Click "Product toevoegen" to add products with quantities
+4. Click **Bestelling Toevoegen**
+
+**What happens:**
+- Order is created in database
+- Order items are created
+- If products match a container, order **auto-links** to that container
+- Delivery ETA is set from container
+- Order appears in orders list immediately
+
+**Result:** Order is now in the system and can be tracked by customers.
+
+---
+
+### Task 6: Fix Old Orders Missing First Name
 **When:** Customer calls asking about their order, but tracking doesn't work
 
 **Why:** Old orders (before webhook) don't have first name synced due to Shopify limitations
@@ -282,7 +310,7 @@ https://shopify-tracker-umber.vercel.app/admin
 
 ---
 
-### Task 6: Manually Link an Order to a Container
+### Task 7: Manually Link an Order to a Container
 **When:** Order is not auto-linking correctly
 
 **Steps:**
