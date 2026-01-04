@@ -20,15 +20,16 @@ export async function POST(request: NextRequest) {
       throw containersError
     }
 
-    // Sort containers by container_id (extract number for proper sorting: LX1414, LX1422, etc.)
+    // Sort containers by ETA (delivery date) - earliest first
+    // This ensures orders go to containers with earliest delivery dates first
     const sortedContainers = (containers || []).sort((a: any, b: any) => {
-      const aNum = parseInt(a.container_id?.match(/\d+/)?.[0] || '0')
-      const bNum = parseInt(b.container_id?.match(/\d+/)?.[0] || '0')
-      return aNum - bNum
+      const aDate = a.eta ? new Date(a.eta).getTime() : Infinity
+      const bDate = b.eta ? new Date(b.eta).getTime() : Infinity
+      return aDate - bDate // Ascending: earliest date first
     })
 
-    console.log(`📦 Found ${sortedContainers.length} containers (sorted by container_id)`)
-    console.log('Container order:', sortedContainers.map((c: any) => c.container_id).join(', '))
+    console.log(`📦 Found ${sortedContainers.length} containers (sorted by ETA - earliest first)`)
+    console.log('Container order by ETA:', sortedContainers.map((c: any) => `${c.container_id} (${c.eta || 'N/A'})`).join(', '))
 
     // 2. Get all container products with quantities
     const { data: containerProducts, error: cpError } = await supabase
