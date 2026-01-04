@@ -537,6 +537,18 @@ export default function OrdersPage() {
         />
       )}
 
+      {/* CSV Import Modal */}
+      {showCSVImportModal && (
+        <CSVImportModal
+          onClose={() => setShowCSVImportModal(false)}
+          onSuccess={() => {
+            fetchData()
+            setShowCSVImportModal(false)
+            toast.success('Orders succesvol geïmporteerd')
+          }}
+        />
+      )}
+
       {/* Toast Notifications */}
       <ToastContainer toasts={toast.toasts} onRemove={toast.removeToast} />
     </div>
