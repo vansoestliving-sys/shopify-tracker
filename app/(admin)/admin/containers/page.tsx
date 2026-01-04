@@ -531,10 +531,23 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
                           <input
                             type="number"
                             min="1"
-                            value={quantity}
+                            value={quantity > 0 ? quantity : ''}
                             onChange={(e) => {
-                              const newQty = parseInt(e.target.value) || 1
-                              setProductQuantities({ ...productQuantities, [product.id]: newQty })
+                              const inputValue = e.target.value
+                              // Allow empty string while typing
+                              if (inputValue === '') {
+                                setProductQuantities({ ...productQuantities, [product.id]: 0 })
+                              } else {
+                                const newQty = parseInt(inputValue) || 1
+                                setProductQuantities({ ...productQuantities, [product.id]: newQty })
+                              }
+                            }}
+                            onBlur={(e) => {
+                              // If empty or 0 on blur, restore to 1
+                              const qty = parseInt(e.target.value) || 0
+                              if (qty <= 0) {
+                                setProductQuantities({ ...productQuantities, [product.id]: 1 })
+                              }
                             }}
                             className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-primary-400"
                             onClick={(e) => e.stopPropagation()}
