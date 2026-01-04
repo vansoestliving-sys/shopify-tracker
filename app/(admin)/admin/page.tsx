@@ -317,6 +317,45 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleSmartAllocateOrders = async () => {
+    if (!confirm('Dit zal alle ongekoppelde bestellingen chronologisch toewijzen op basis van containervoorraden. Doorgaan?')) {
+      return
+    }
+
+    setSyncing(true)
+    try {
+      const response = await fetch('/api/containers/allocate-orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      const data = await response.json()
+
+      if (response.ok && data.success) {
+        toast.success(`✅ ${data.allocated} bestellingen toegewezen!`)
+        if (data.skipped > 0) {
+          toast.info(`ℹ️ ${data.skipped} bestellingen overgeslagen (geen voorraad)`)
+        }
+        // Refresh data
+        await fetchData()
+        
+        // Show inventory status
+        if (data.inventoryStatus) {
+          console.log('📦 Resterende voorraad per container:', data.inventoryStatus)
+        }
+      } else {
+        toast.error(data.message || 'Toewijzen mislukt')
+      }
+    } catch (error) {
+      console.error('Error allocating orders:', error)
+      toast.error('Toewijzen mislukt')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen">
