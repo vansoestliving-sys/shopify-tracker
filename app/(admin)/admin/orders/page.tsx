@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload } from 'lucide-react'
+import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
@@ -199,6 +199,29 @@ export default function OrdersPage() {
     } catch (error) {
       console.error('Bulk update error:', error)
       toast.error('Failed to update orders')
+    }
+  }
+
+  const handleDeleteOrder = async (orderId: string, orderNumber: string) => {
+    if (!confirm(`Weet je zeker dat je bestelling #${orderNumber} wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/orders/${orderId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to delete order')
+      }
+
+      toast.success(`Bestelling #${orderNumber} verwijderd`)
+      fetchData()
+    } catch (error: any) {
+      console.error('Delete error:', error)
+      toast.error(`Fout bij verwijderen: ${error.message}`)
     }
   }
 
@@ -450,16 +473,23 @@ export default function OrdersPage() {
                           <button
                             onClick={() => setViewingOrder(order)}
                             className="text-primary-400 hover:text-primary-600 transition-colors"
-                            title="View Order Details"
+                            title="Bekijk Bestelling"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           <button
                             onClick={() => setEditingOrder(order)}
                             className="text-primary-400 hover:text-primary-600 transition-colors"
-                            title="Edit Order"
+                            title="Bewerk Bestelling"
                           >
                             <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteOrder(order.id, order.shopify_order_number || 'N/A')}
+                            className="text-red-600 hover:text-red-900 transition-colors"
+                            title="Verwijder Bestelling"
+                          >
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </div>
                       </td>

@@ -90,3 +90,29 @@ export async function PATCH(
   }
 }
 
+// DELETE order
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const supabase = createSupabaseAdminClient()
+
+    // Delete order (order_items will be deleted automatically due to CASCADE)
+    const { error } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', params.id)
+
+    if (error) throw error
+
+    return NextResponse.json({ success: true, message: 'Order deleted successfully' })
+  } catch (error: any) {
+    console.error('Error deleting order:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete order', details: error.message },
+      { status: 500 }
+    )
+  }
+}
+
