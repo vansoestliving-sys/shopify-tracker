@@ -428,12 +428,20 @@ export default function AdminDashboard() {
               <li>Controleer de browserconsole op API-fouten</li>
             </ul>
             <button
-              onClick={handleSyncOrders}
+              onClick={() => handleSyncOrders(false)}
               disabled={syncing}
               className="flex items-center space-x-1.5 bg-primary-400 hover:bg-primary-500 disabled:bg-gray-400 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
               <span>{syncing ? 'Synchroniseren...' : 'Synchroniseer Bestellingen van Shopify'}</span>
+            </button>
+            <button
+              onClick={() => handleSyncOrders(true)}
+              disabled={syncing}
+              className="flex items-center space-x-1.5 bg-[#FF914D] hover:bg-[#C4885E] disabled:bg-gray-400 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              <span>{syncing ? 'Synchroniseren Alle...' : 'Synchroniseer Alle Bestellingen'}</span>
             </button>
           </div>
         )}
