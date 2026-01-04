@@ -4,9 +4,25 @@ import { createSupabaseAdminClient } from '@/lib/supabase/server'
 // Smart allocation: Links orders chronologically based on container product quantities
 export async function POST(request: NextRequest) {
   try {
+    console.log('🚀 Starting smart order allocation...')
+    
     const supabase = createSupabaseAdminClient()
 
-    console.log('🚀 Starting smart order allocation...')
+    // Verify authentication (optional, since route is protected by middleware)
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      if (authError || !user) {
+        console.error('Auth error:', authError)
+        return NextResponse.json(
+          { error: 'Unauthorized' },
+          { status: 401 }
+        )
+      }
+      console.log('✅ User authenticated:', user.email)
+    } catch (authErr) {
+      console.error('Auth check failed:', authErr)
+      // Continue anyway, admin client doesn't need user auth
+    }
 
     // 1. Get all containers with their products and quantities
     const { data: containers, error: containersError } = await supabase
@@ -14,7 +30,12 @@ export async function POST(request: NextRequest) {
       .select('id, container_id, eta')
       .order('created_at', { ascending: true }) // Process containers in order
 
-    if (containersError) throw containersError
+    if (containersError) {
+      console.error('Error fetching containers:', containersError)
+      throw containersError
+    }
+
+    console.log(`📦 Found ${containers?.length || 0} containers`)
 
     // 2. Get all container products with quantities
     const { data: containerProducts, error: cpError } = await supabase
@@ -32,7 +53,12 @@ export async function POST(request: NextRequest) {
         )
       `)
 
-    if (cpError) throw cpError
+    if (cpError) {
+      console.error('Error fetching container products:', cpError)
+      throw cpError
+    }
+
+    console.log(`📦 Found ${containerProducts?.length || 0} container products`)
 
     // 3. Build container inventory: { containerId: { productName: { quantity, productId } } }
     const containerInventory: Record<string, Record<string, { quantity: number, productId: string, shopifyId?: number }>> = {}
@@ -72,9 +98,13 @@ export async function POST(request: NextRequest) {
       .or('container_id.is.null,container_id.eq.')
       .order('created_at', { ascending: true }) // Oldest first
 
-    if (ordersError) throw ordersError
+    if (ordersError) {
+      console.error('Error fetching orders:', ordersError)
+      throw ordersError
+    }
 
     if (!orders || orders.length === 0) {
+      console.log('ℹ️ No unlinked orders found')
       return NextResponse.json({
         success: true,
         allocated: 0,
@@ -91,7 +121,12 @@ export async function POST(request: NextRequest) {
       .select('id, order_id, product_id, shopify_product_id, name, quantity')
       .in('order_id', orderIds)
 
-    if (itemsError) throw itemsError
+    if (itemsError) {
+      console.error('Error fetching order items:', itemsError)
+      throw itemsError
+    }
+
+    console.log(`📋 Found ${allOrderItems?.length || 0} order items`)
 
     // Group items by order_id
     const orderItemsMap: Record<string, any[]> = {}
