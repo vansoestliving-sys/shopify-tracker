@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       throw testError
     }
 
+    // Query Supabase directly - no caching
     const { data: orders, error } = await supabase
       .from('orders')
       .select(`
@@ -54,7 +55,10 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
-    console.log(`📦 Fetched ${orders?.length || 0} orders from database`)
+    // Log to verify we're getting fresh data from Supabase
+    const orderIds = orders?.map((o: any) => o.id) || []
+    console.log(`📦 Fetched ${orders?.length || 0} orders directly from Supabase database`)
+    console.log(`📋 Order IDs in database:`, orderIds.slice(0, 10))
     
     // Log latest orders to verify data
     if (orders && orders.length > 0) {

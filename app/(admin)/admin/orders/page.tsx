@@ -79,22 +79,27 @@ export default function OrdersPage() {
     try {
       setError(null)
       setLoading(true)
-      const cacheBuster = `?t=${Date.now()}`
+      // Aggressive cache busting - use timestamp + random number
+      const cacheBuster = `?t=${Date.now()}&r=${Math.random()}`
       const [ordersRes, containersRes] = await Promise.all([
         fetch(`/api/admin/orders${cacheBuster}`, { 
-          cache: 'no-store', 
+          method: 'GET',
+          cache: 'no-store',
           headers: { 
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
             'Pragma': 'no-cache',
-            'Expires': '0'
+            'Expires': '0',
+            'X-Request-Time': Date.now().toString()
           } 
         }),
         fetch(`/api/containers${cacheBuster}`, { 
-          cache: 'no-store', 
+          method: 'GET',
+          cache: 'no-store',
           headers: { 
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
             'Pragma': 'no-cache',
-            'Expires': '0'
+            'Expires': '0',
+            'X-Request-Time': Date.now().toString()
           } 
         }),
       ])
@@ -113,9 +118,11 @@ export default function OrdersPage() {
       const freshContainers = containersData.containers || []
       
       // Log orders to verify data structure and check for new orders
-      console.log('Orders page - Data received:', {
+      const orderIds = freshOrders.map((o: Order) => o.id)
+      console.log('Orders page - Data received from API:', {
         ordersCount: freshOrders.length,
         containersCount: freshContainers.length,
+        orderIds: orderIds.slice(0, 10), // Show first 10 IDs
         latestOrders: freshOrders.slice(0, 5).map((o: Order) => ({
           id: o.id,
           order_number: o.shopify_order_number,
@@ -128,9 +135,17 @@ export default function OrdersPage() {
       })
       
       // Check if order count changed
-      if (orders.length > 0 && freshOrders.length > orders.length) {
-        const newOrders = freshOrders.length - orders.length
-        console.log(`🆕 ${newOrders} new order(s) detected!`)
+      if (orders.length > 0) {
+        const previousIds = orders.map((o: Order) => o.id)
+        const newOrderIds = orderIds.filter((id: string) => !previousIds.includes(id))
+        const removedOrderIds = previousIds.filter((id: string) => !orderIds.includes(id))
+        
+        if (newOrderIds.length > 0) {
+          console.log(`🆕 ${newOrderIds.length} new order(s) detected:`, newOrderIds)
+        }
+        if (removedOrderIds.length > 0) {
+          console.log(`🗑️ ${removedOrderIds.length} order(s) removed from database:`, removedOrderIds)
+        }
       }
       
       setOrders(freshOrders)

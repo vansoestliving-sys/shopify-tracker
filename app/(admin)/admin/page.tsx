@@ -86,22 +86,27 @@ export default function AdminDashboard() {
     try {
       setError(null)
       setLoading(true)
-      const cacheBuster = `?t=${Date.now()}`
+      // Aggressive cache busting - use timestamp + random number
+      const cacheBuster = `?t=${Date.now()}&r=${Math.random()}`
       const [containersRes, ordersRes] = await Promise.all([
         fetch(`/api/containers${cacheBuster}`, { 
-          cache: 'no-store', 
+          method: 'GET',
+          cache: 'no-store',
           headers: { 
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
             'Pragma': 'no-cache',
-            'Expires': '0'
+            'Expires': '0',
+            'X-Request-Time': Date.now().toString()
           } 
         }),
         fetch(`/api/admin/orders${cacheBuster}`, { 
-          cache: 'no-store', 
+          method: 'GET',
+          cache: 'no-store',
           headers: { 
-            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
             'Pragma': 'no-cache',
-            'Expires': '0'
+            'Expires': '0',
+            'X-Request-Time': Date.now().toString()
           } 
         }),
       ])
