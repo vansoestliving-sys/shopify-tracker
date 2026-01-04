@@ -122,6 +122,55 @@ export async function POST(
       })
     }
 
+    // Get ALL containers with their products to find best match
+    const { data: allContainers, error: containersError } = await supabase
+      .from('containers')
+      .select('id, container_id, eta')
+    
+    if (containersError) throw containersError
+
+    // Get all container products
+    const { data: allContainerProducts, error: allProductsError } = await supabase
+      .from('container_products')
+      .select('container_id, product:products(shopify_product_id, name)')
+    
+    if (allProductsError) throw allProductsError
+
+    // Build container product maps
+    const containerProductMap: Record<string, { shopifyIds: Set<number>, names: Set<string> }> = {}
+    allContainers?.forEach((c: any) => {
+      containerProductMap[c.id] = { shopifyIds: new Set(), names: new Set() }
+    })
+    
+    allContainerProducts?.forEach((cp: any) => {
+      const containerId = cp.container_id
+      if (containerProductMap[containerId]) {
+        if (cp.product?.shopify_product_id) {
+          containerProductMap[containerId].shopifyIds.add(cp.product.shopify_product_id)
+        }
+        if (cp.product?.name) {
+          containerProductMap[containerId].names.add(cp.product.name.toLowerCase().trim())
+        }
+      }
+    })
+
+    // Get all order items for these orders to count matches per container
+    const { data: allOrderItems, error: allItemsError } = await supabase
+      .from('order_items')
+      .select('order_id, shopify_product_id, name')
+      .in('order_id', uniqueOrderIds)
+    
+    if (allItemsError) throw allItemsError
+
+    // Group order items by order_id
+    const orderItemsMap: Record<string, any[]> = {}
+    allOrderItems?.forEach((item: any) => {
+      if (!orderItemsMap[item.order_id]) {
+        orderItemsMap[item.order_id] = []
+      }
+      orderItemsMap[item.order_id].push(item)
+    })
+
     // Query orders directly to check their actual container_id status
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
@@ -138,54 +187,105 @@ export async function POST(
       })
     }
 
-    // Separate linked vs unlinked orders - be very explicit about what "unlinked" means
-    const unlinkedOrders = orders.filter((o: any) => {
-      const containerId = o.container_id
-      // Unlinked means: null, undefined, empty string, or falsy
-      return containerId == null || containerId === '' || containerId === undefined
-    })
+    // For each order, find which container has the MOST matching products
+    const ordersToLink: string[] = []
+    const skippedOrders: { orderId: string, reason: string }[] = []
     
-    const alreadyLinked = orders.filter((o: any) => {
-      const containerId = o.container_id
-      // Already linked means: has a container_id that's not null/empty AND not the current container
-      return containerId != null && containerId !== '' && containerId !== params.id
-    })
-    
-    const sameContainer = orders.filter((o: any) => o.container_id === params.id)
+    for (const order of orders) {
+      // Skip if already linked to a different container
+      if (order.container_id && order.container_id !== params.id) {
+        skippedOrders.push({ orderId: order.id, reason: 'already_linked' })
+        continue
+      }
+      
+      // Skip if already linked to this container
+      if (order.container_id === params.id) {
+        continue
+      }
 
-    // Debug logging - show actual values
-    console.log('Link orders debug:', {
+      const orderItems = orderItemsMap[order.id] || []
+      if (orderItems.length === 0) {
+        skippedOrders.push({ orderId: order.id, reason: 'no_items' })
+        continue
+      }
+
+      // Count matches for each container
+      const containerMatches: Record<string, number> = {}
+      
+      for (const containerId of Object.keys(containerProductMap)) {
+        const containerProducts = containerProductMap[containerId]
+        let matches = 0
+        
+        for (const item of orderItems) {
+          // Match by shopify_product_id
+          if (item.shopify_product_id && containerProducts.shopifyIds.has(item.shopify_product_id)) {
+            matches++
+          }
+          // Match by name
+          else if (item.name) {
+            const itemName = item.name.toLowerCase().trim()
+            for (const containerName of containerProducts.names) {
+              if (itemName.includes(containerName) || containerName.includes(itemName)) {
+                matches++
+                break // Count each order item only once
+              }
+            }
+          }
+        }
+        
+        if (matches > 0) {
+          containerMatches[containerId] = matches
+        }
+      }
+
+      // Find container with most matches
+      const bestMatch = Object.entries(containerMatches).sort((a, b) => b[1] - a[1])[0]
+      
+      // Only link to THIS container if it has the most matches (or tied for most)
+      if (bestMatch && bestMatch[0] === params.id) {
+        // Check if there's a tie - if so, still link to this container
+        const maxMatches = bestMatch[1]
+        const tiedContainers = Object.entries(containerMatches).filter(([_, count]) => count === maxMatches)
+        
+        if (tiedContainers.length === 1 || tiedContainers[0][0] === params.id) {
+          ordersToLink.push(order.id)
+        } else {
+          skippedOrders.push({ orderId: order.id, reason: 'better_match_exists' })
+        }
+      } else if (bestMatch) {
+        skippedOrders.push({ orderId: order.id, reason: `better_match_container_${bestMatch[0]}` })
+      } else {
+        skippedOrders.push({ orderId: order.id, reason: 'no_matches' })
+      }
+    }
+
+    console.log('🔗 Link orders - Smart matching:', {
       totalOrders: orders.length,
-      unlinkedCount: unlinkedOrders.length,
-      alreadyLinkedCount: alreadyLinked.length,
-      sameContainerCount: sameContainer.length,
+      ordersToLink: ordersToLink.length,
+      skipped: skippedOrders.length,
       containerId: params.id,
-      sampleUnlinked: unlinkedOrders.slice(0, 3).map((o: any) => ({ id: o.id, container_id: o.container_id, order_num: o.shopify_order_number })),
-      sampleLinked: alreadyLinked.slice(0, 3).map((o: any) => ({ id: o.id, container_id: o.container_id, order_num: o.shopify_order_number })),
+      sampleSkipped: skippedOrders.slice(0, 5),
     })
-
-    // Only link orders that don't have a container
-    const ordersToLink = unlinkedOrders.map((o: any) => o.id)
 
     if (ordersToLink.length === 0) {
-      // If all orders are linked to THIS container, that's fine
-      if (sameContainer.length > 0 && alreadyLinked.length === 0) {
-        return NextResponse.json({
-          success: true,
-          linked: 0,
-          message: `All ${sameContainer.length} matching order(s) are already linked to this container`,
-        })
+      const skippedReasons = {
+        already_linked: skippedOrders.filter(s => s.reason === 'already_linked').length,
+        better_match: skippedOrders.filter(s => s.reason.startsWith('better_match')).length,
+        no_matches: skippedOrders.filter(s => s.reason === 'no_matches').length,
+        no_items: skippedOrders.filter(s => s.reason === 'no_items').length,
       }
       
       return NextResponse.json({
         success: false,
         linked: 0,
-        message: 'All matching orders are already linked to containers',
-        alreadyLinked: alreadyLinked.length,
-        sameContainer: sameContainer.length,
-        warning: alreadyLinked.length > 0 
-          ? `${alreadyLinked.length} order(s) are already linked to other containers. Unlink them first if you want to re-link.`
-          : undefined,
+        message: 'No orders to link to this container',
+        skipped: skippedOrders.length,
+        skippedReasons,
+        warning: skippedReasons.better_match > 0 
+          ? `${skippedReasons.better_match} order(s) have more products matching other containers. Link those containers first.`
+          : skippedReasons.already_linked > 0
+          ? `${skippedReasons.already_linked} order(s) are already linked to other containers.`
+          : 'No orders found with products that best match this container.',
       })
     }
 
