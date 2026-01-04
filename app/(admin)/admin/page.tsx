@@ -482,16 +482,36 @@ export default function AdminDashboard() {
         <div id="containers" className="mb-6 scroll-mt-8">
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-lg font-bold text-gray-900">Containers</h2>
-            <button
-              onClick={() => {
-                setEditingContainer(null)
-                setShowContainerForm(true)
-              }}
-              className="flex items-center space-x-1.5 bg-primary-400 hover:bg-primary-500 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Container</span>
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSmartAllocateOrders}
+                disabled={syncing}
+                className="flex items-center space-x-1.5 bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Wijs alle ongekoppelde bestellingen automatisch toe op basis van voorraad"
+              >
+                {syncing ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Toewijzen...</span>
+                  </>
+                ) : (
+                  <>
+                    <LinkIcon className="w-3.5 h-3.5" />
+                    <span>Slim Toewijzen</span>
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setEditingContainer(null)
+                  setShowContainerForm(true)
+                }}
+                className="flex items-center space-x-1.5 bg-primary-400 hover:bg-primary-500 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Container</span>
+              </button>
+            </div>
           </div>
 
           {showContainerForm && (
