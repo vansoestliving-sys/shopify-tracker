@@ -45,14 +45,23 @@ export default function ProductNamesPage() {
         .from('order_items')
         .select('name')
       
-      if (error) throw error
+      if (error) {
+        console.error('Supabase error:', error)
+        throw error
+      }
 
-      // Count occurrences and group
+      console.log('Fetched order_items:', data?.length || 0, 'items')
+
+      // Count occurrences and group (filter out empty names)
       const nameMap = new Map<string, number>()
       data?.forEach((item: any) => {
         const name = item.name || ''
-        nameMap.set(name, (nameMap.get(name) || 0) + 1)
+        if (name && name.trim().length > 0) {
+          nameMap.set(name, (nameMap.get(name) || 0) + 1)
+        }
       })
+
+      console.log('Unique product names found:', nameMap.size)
 
       // Convert to array and add normalized name
       const products: ProductName[] = Array.from(nameMap.entries())
@@ -63,6 +72,7 @@ export default function ProductNamesPage() {
         }))
         .sort((a, b) => b.count - a.count)
 
+      console.log('Products array:', products.length)
       setProductNames(products)
     } catch (error: any) {
       console.error('Error fetching product names:', error)
