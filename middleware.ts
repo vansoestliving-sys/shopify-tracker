@@ -11,8 +11,12 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // Protect admin routes (basic check - enhance with proper admin auth)
+  // Disable caching for admin pages - force fresh data
   if (req.nextUrl.pathname.startsWith('/admin')) {
+    res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    res.headers.set('Pragma', 'no-cache')
+    res.headers.set('Expires', '0')
+    
     // In production, add proper admin authentication here
     // For now, this is a basic check
     // You should implement proper admin authentication

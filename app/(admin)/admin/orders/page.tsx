@@ -12,9 +12,6 @@ import { ToastContainer } from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
 import { OrderSkeleton } from '@/components/LoadingSkeleton'
 
-// Disable Next.js caching - always render dynamically
-export const dynamic = 'force-dynamic'
-
 interface Order {
   id: string
   shopify_order_number: string | null
@@ -84,8 +81,22 @@ export default function OrdersPage() {
       setLoading(true)
       const cacheBuster = `?t=${Date.now()}`
       const [ordersRes, containersRes] = await Promise.all([
-        fetch(`/api/admin/orders${cacheBuster}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
-        fetch(`/api/containers${cacheBuster}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+        fetch(`/api/admin/orders${cacheBuster}`, { 
+          cache: 'no-store', 
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          } 
+        }),
+        fetch(`/api/containers${cacheBuster}`, { 
+          cache: 'no-store', 
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          } 
+        }),
       ])
 
       const ordersData = await ordersRes.json()
