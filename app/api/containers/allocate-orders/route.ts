@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
       .select('id, shopify_order_number, created_at')
-      .or('container_id.is.null,container_id.eq.')
+      .is('container_id', null) // Only get orders with NULL container_id
       .order('created_at', { ascending: true }) // Oldest first
 
     if (ordersError) {
