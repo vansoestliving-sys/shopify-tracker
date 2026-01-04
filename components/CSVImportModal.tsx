@@ -33,18 +33,43 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
       const text = event.target?.result as string
       const lines = text.split('\n').filter(line => line.trim())
       
-      // Shopify CSV uses tabs, not commas
-      const headers = lines[0].split('\t').map(h => h.trim())
+      // Detect separator
+      const firstLine = lines[0]
+      const hasTabs = firstLine.includes('\t')
+      const separator = hasTabs ? '\t' : ','
+      
+      // Parse CSV with proper quote handling
+      const parseLine = (line: string): string[] => {
+        const result: string[] = []
+        let current = ''
+        let inQuotes = false
+        
+        for (let i = 0; i < line.length; i++) {
+          const char = line[i]
+          if (char === '"') {
+            inQuotes = !inQuotes
+          } else if ((char === separator || char === '\t') && !inQuotes) {
+            result.push(current.trim())
+            current = ''
+          } else {
+            current += char
+          }
+        }
+        result.push(current.trim())
+        return result
+      }
+      
+      const headers = parseLine(lines[0])
       
       // Parse first 5 rows as preview (show key columns only for readability)
-      const keyColumns = ['Order Email', 'Billing Name', 'Shipping Name', 'Financial Status', 'Total', 'Lineitem name', 'Lineitem quantity']
+      const keyColumns = ['Name', 'Email', 'Billing Name', 'Shipping Name', 'Financial Status', 'Total', 'Lineitem name', 'Lineitem quantity']
       const previewData = []
       for (let i = 1; i < Math.min(6, lines.length); i++) {
-        const values = lines[i].split('\t').map(v => v.trim())
+        const values = parseLine(lines[i])
         const row: any = {}
         headers.forEach((header, index) => {
           // Only show key columns in preview
-          if (keyColumns.includes(header) || index < 3) {
+          if (keyColumns.includes(header) || index < 5) {
             row[header] = values[index] || ''
           }
         })
@@ -59,22 +84,66 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
     const lines = text.split('\n').filter(line => line.trim())
     if (lines.length < 2) return []
 
-    // Parse headers - case sensitive as per Shopify format
-    const headers = lines[0].split('\t').map(h => h.trim()) // Shopify CSV uses tabs, not commas
+    // Try to detect separator (tab or comma)
+    const firstLine = lines[0]
+    const hasTabs = firstLine.includes('\t')
+    const separator = hasTabs ? '\t' : ','
+    
+    // Parse headers - handle quoted values
+    const parseLine = (line: string): string[] => {
+      const result: string[] = []
+      let current = ''
+      let inQuotes = false
+      
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]
+        if (char === '"') {
+          inQuotes = !inQuotes
+        } else if ((char === separator || char === '\t') && !inQuotes) {
+          result.push(current.trim())
+          current = ''
+        } else {
+          current += char
+        }
+      }
+      result.push(current.trim())
+      return result
+    }
+    
+    const headers = parseLine(lines[0])
     
     // Group orders by order number (since each line item is a separate row)
     const ordersMap = new Map<string, any>()
 
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split('\t').map(v => v.trim()) // Use tab separator
+      const values = parseLine(lines[i])
       if (values.length === 0 || !values[0]) continue
 
-      // Get order number from first column (format: #1751)
-      const orderNumberRaw = values[0] || ''
-      const orderNumber = orderNumberRaw.replace('#', '').trim()
+      // Find order number - check "Name" column (first column with #) or look for order number pattern
+      let orderNumber = ''
+      let orderNumberIndex = -1
+      
+      // Check if first column is "Name" and contains order number
+      if (headers[0] === 'Name' || headers[0].toLowerCase().includes('name')) {
+        const nameValue = values[0] || ''
+        const match = nameValue.match(/#?(\d+)/)
+        if (match) {
+          orderNumber = match[1]
+          orderNumberIndex = 0
+        }
+      }
+      
+      // If not found, look for "Id" column
+      if (!orderNumber) {
+        const idIndex = headers.findIndex(h => h === 'Id' || h.toLowerCase() === 'id')
+        if (idIndex >= 0 && values[idIndex]) {
+          orderNumber = values[idIndex].replace('#', '').trim()
+          orderNumberIndex = idIndex
+        }
+      }
       
       if (!orderNumber) {
-        console.warn(`Skipping row ${i + 1}: missing order number`)
+        console.warn(`Skipping row ${i + 1}: missing order number. First value: ${values[0]}`)
         continue
       }
 
@@ -90,10 +159,16 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
         headers.forEach((header, index) => {
           const value = values[index] || ''
           
-          if (header === 'Order Email' || header === 'Email') {
+          if (header === 'Email' || header === 'Order Email') {
             order.customer_email = value
-          } else if (header === 'Billing Name' || header === 'Shipping Name') {
+          } else if (header === 'Billing Name') {
             // Extract first name from full name
+            if (value && !order.customer_first_name) {
+              const nameParts = value.trim().split(/\s+/)
+              order.customer_first_name = nameParts[0] || value
+            }
+          } else if (header === 'Shipping Name') {
+            // Use shipping name if billing name not available
             if (value && !order.customer_first_name) {
               const nameParts = value.trim().split(/\s+/)
               order.customer_first_name = nameParts[0] || value
@@ -102,6 +177,7 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
             // Map financial status to our status
             const statusMap: Record<string, string> = {
               'paid': 'confirmed',
+              'authorized': 'confirmed',
               'pending': 'pending',
               'refunded': 'cancelled',
               'partially_paid': 'pending',
