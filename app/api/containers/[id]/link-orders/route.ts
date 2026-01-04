@@ -304,11 +304,17 @@ export async function POST(
     return NextResponse.json({
       success: true,
       linked: ordersToLink.length,
-      skipped: alreadyLinked.length,
-      sameContainer: sameContainer.length,
+      skipped: skippedOrders.length,
       orderIds: ordersToLink,
-      warning: alreadyLinked.length > 0 
-        ? `${alreadyLinked.length} order(s) were already linked to other containers and were skipped.`
+      skippedReasons: {
+        already_linked: skippedOrders.filter(s => s.reason === 'already_linked').length,
+        better_match: skippedOrders.filter(s => s.reason.startsWith('better_match')).length,
+        no_matches: skippedOrders.filter(s => s.reason === 'no_matches').length,
+      },
+      warning: skippedOrders.filter(s => s.reason === 'already_linked').length > 0 
+        ? `${skippedOrders.filter(s => s.reason === 'already_linked').length} order(s) were already linked to other containers and were skipped.`
+        : skippedOrders.filter(s => s.reason.startsWith('better_match')).length > 0
+        ? `${skippedOrders.filter(s => s.reason.startsWith('better_match')).length} order(s) have more products matching other containers.`
         : undefined,
     })
   } catch (error: any) {
