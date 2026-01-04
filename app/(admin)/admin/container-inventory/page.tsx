@@ -276,6 +276,33 @@ export default function ContainerInventoryPage() {
                       ETA: {inv.container.eta || 'N/A'} | Status: {inv.container.status}
                     </p>
                   </div>
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Reset container quantities to match allocated orders? This will set total = allocated for all products.`)) {
+                        return
+                      }
+                      // Reset quantities: set total = allocated
+                      for (const product of inv.products) {
+                        const allocated = inv.allocated[product.product_id] || 0
+                        if (allocated > 0) {
+                          const { error } = await supabase
+                            .from('container_products')
+                            .update({ quantity: allocated })
+                            .eq('id', product.id)
+                          if (error) {
+                            toast.error(`Fout bij resetten ${product.product?.name}`)
+                            return
+                          }
+                        }
+                      }
+                      toast.success('Hoeveelheden gereset')
+                      fetchInventory()
+                    }}
+                    className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md"
+                    title="Reset quantities to match allocated orders"
+                  >
+                    Reset naar Toegewezen
+                  </button>
                 </div>
 
                 <div className="overflow-x-auto">

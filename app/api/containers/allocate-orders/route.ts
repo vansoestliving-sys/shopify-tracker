@@ -141,14 +141,31 @@ export async function POST(request: NextRequest) {
       }
 
       // Calculate required quantities per product
+      // NOTE: Ignore "draaifunctie" (turn function) - it always has same delivery date as chair
       const requiredProducts: Record<string, number> = {}
       
       for (const item of items) {
         const productName = item.name?.toLowerCase().trim()
         if (productName) {
+          // Skip turn function products - not important for delivery tracking
+          if (productName.includes('draaifunctie') || productName.includes('turn function')) {
+            continue
+          }
+          
           const itemQty = item.quantity || 1
           requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
         }
+      }
+
+      // If order only has turn function (no chairs), skip it
+      if (Object.keys(requiredProducts).length === 0) {
+        skipped.push({
+          orderId: order.id,
+          orderNumber: order.shopify_order_number,
+          reason: 'only_turn_function',
+          productsNeeded: 'Only turn function (not tracked)',
+        })
+        continue
       }
 
       // Find the best container that has enough stock for ALL products in this order
@@ -158,7 +175,7 @@ export async function POST(request: NextRequest) {
         const inventory = containerInventory[containerId]
         let canFulfill = true
 
-        // Check if this container has enough of ALL products
+        // Check if this container has enough of ALL products (excluding turn function)
         for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
           const available = inventory[productName]?.quantity || 0
           
