@@ -54,18 +54,19 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
-    console.log(`Fetched ${orders?.length || 0} orders from database`)
+    console.log(`📦 Fetched ${orders?.length || 0} orders from database`)
     
-    // Log sample order to verify data
+    // Log latest orders to verify data
     if (orders && orders.length > 0) {
-      console.log('Sample order from API:', {
-        id: orders[0].id,
-        order_number: orders[0].shopify_order_number,
-        container_id: orders[0].container_id,
-        email: orders[0].customer_email,
-        first_name: orders[0].customer_first_name,
-        status: orders[0].status,
-      })
+      const latestOrders = orders.slice(0, 3)
+      console.log('Latest orders from API:', latestOrders.map((o: any) => ({
+        id: o.id,
+        order_number: o.shopify_order_number,
+        container_id: o.container_id,
+        first_name: o.customer_first_name,
+        status: o.status,
+        created_at: o.created_at,
+      })))
     }
 
     const response = NextResponse.json({ 

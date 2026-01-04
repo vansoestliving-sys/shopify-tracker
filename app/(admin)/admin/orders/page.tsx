@@ -98,20 +98,26 @@ export default function OrdersPage() {
       const freshOrders = ordersData.orders || []
       const freshContainers = containersData.containers || []
       
-      // Log first few orders to verify data structure
+      // Log orders to verify data structure and check for new orders
       console.log('Orders page - Data received:', {
         ordersCount: freshOrders.length,
         containersCount: freshContainers.length,
-        first3Orders: freshOrders.slice(0, 3).map((o: Order) => ({
+        latestOrders: freshOrders.slice(0, 5).map((o: Order) => ({
           id: o.id,
           order_number: o.shopify_order_number,
           container_id: o.container_id,
-          email: o.customer_email,
+          first_name: o.customer_first_name,
           status: o.status,
         })),
         ordersWithContainer: freshOrders.filter((o: Order) => o.container_id).length,
         containerIds: freshContainers.map((c: Container) => ({ id: c.id, container_id: c.container_id })),
       })
+      
+      // Check if order count changed
+      if (orders.length > 0 && freshOrders.length > orders.length) {
+        const newOrders = freshOrders.length - orders.length
+        console.log(`🆕 ${newOrders} new order(s) detected!`)
+      }
       
       setOrders(freshOrders)
       setContainers(freshContainers)

@@ -110,6 +110,23 @@ export default function AdminDashboard() {
       const freshContainers = containersData.containers || []
       const freshOrders = ordersData.orders || []
 
+      // Log orders to verify data
+      console.log('Admin dashboard - Data received:', {
+        ordersCount: freshOrders.length,
+        containersCount: freshContainers.length,
+        latestOrders: freshOrders.slice(0, 3).map((o: Order) => ({
+          order_number: o.shopify_order_number,
+          first_name: o.customer_first_name,
+          container_id: o.container_id,
+        })),
+      })
+      
+      // Check if order count changed
+      if (orders.length > 0 && freshOrders.length > orders.length) {
+        const newOrders = freshOrders.length - orders.length
+        console.log(`🆕 ${newOrders} new order(s) detected!`)
+      }
+
       setContainers(freshContainers)
       setOrders(freshOrders)
       
