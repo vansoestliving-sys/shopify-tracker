@@ -32,15 +32,21 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
     reader.onload = (event) => {
       const text = event.target?.result as string
       const lines = text.split('\n').filter(line => line.trim())
-      const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''))
       
-      // Parse first 5 rows as preview
+      // Shopify CSV uses tabs, not commas
+      const headers = lines[0].split('\t').map(h => h.trim())
+      
+      // Parse first 5 rows as preview (show key columns only for readability)
+      const keyColumns = ['Order Email', 'Billing Name', 'Shipping Name', 'Financial Status', 'Total', 'Lineitem name', 'Lineitem quantity']
       const previewData = []
       for (let i = 1; i < Math.min(6, lines.length); i++) {
-        const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
+        const values = lines[i].split('\t').map(v => v.trim())
         const row: any = {}
         headers.forEach((header, index) => {
-          row[header] = values[index] || ''
+          // Only show key columns in preview
+          if (keyColumns.includes(header) || index < 3) {
+            row[header] = values[index] || ''
+          }
         })
         previewData.push(row)
       }
@@ -53,56 +59,116 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
     const lines = text.split('\n').filter(line => line.trim())
     if (lines.length < 2) return []
 
-    const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, '').toLowerCase())
-    const orders: any[] = []
+    // Parse headers - case sensitive as per Shopify format
+    const headers = lines[0].split('\t').map(h => h.trim()) // Shopify CSV uses tabs, not commas
+    
+    // Group orders by order number (since each line item is a separate row)
+    const ordersMap = new Map<string, any>()
 
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim().replace(/"/g, ''))
+      const values = lines[i].split('\t').map(v => v.trim()) // Use tab separator
       if (values.length === 0 || !values[0]) continue
 
-      const order: any = {}
+      // Get order number from first column (format: #1751)
+      const orderNumberRaw = values[0] || ''
+      const orderNumber = orderNumberRaw.replace('#', '').trim()
+      
+      if (!orderNumber) {
+        console.warn(`Skipping row ${i + 1}: missing order number`)
+        continue
+      }
+
+      // Get or create order object
+      let order = ordersMap.get(orderNumber)
+      if (!order) {
+        order = {
+          shopify_order_number: orderNumber,
+          order_items: [],
+        }
+        
+        // Extract order-level data (only once per order)
+        headers.forEach((header, index) => {
+          const value = values[index] || ''
+          
+          if (header === 'Order Email' || header === 'Email') {
+            order.customer_email = value
+          } else if (header === 'Billing Name' || header === 'Shipping Name') {
+            // Extract first name from full name
+            if (value && !order.customer_first_name) {
+              const nameParts = value.trim().split(/\s+/)
+              order.customer_first_name = nameParts[0] || value
+            }
+          } else if (header === 'Financial Status') {
+            // Map financial status to our status
+            const statusMap: Record<string, string> = {
+              'paid': 'confirmed',
+              'pending': 'pending',
+              'refunded': 'cancelled',
+              'partially_paid': 'pending',
+              'partially_refunded': 'confirmed',
+            }
+            order.status = statusMap[value.toLowerCase()] || 'pending'
+          } else if (header === 'Total') {
+            order.total_amount = parseFloat(value) || null
+          } else if (header === 'Currency') {
+            order.currency = value || 'EUR'
+          } else if (header === 'Created at') {
+            order.created_at = value
+          } else if (header === 'Id') {
+            order.shopify_order_id = parseInt(value) || null
+          }
+        })
+        
+        ordersMap.set(orderNumber, order)
+      }
+
+      // Extract line item data (each row is a line item)
+      const lineItem: any = {}
       headers.forEach((header, index) => {
         const value = values[index] || ''
         
-        // Map CSV columns to our order structure
-        if (header.includes('order') && header.includes('number')) {
-          order.shopify_order_number = value
-        } else if (header.includes('order') && header.includes('id')) {
-          order.shopify_order_id = parseInt(value) || null
-        } else if (header.includes('email')) {
-          order.customer_email = value
-        } else if (header.includes('first') && header.includes('name')) {
-          order.customer_first_name = value
-        } else if (header.includes('status')) {
-          order.status = value.toLowerCase() || 'pending'
-        } else if (header.includes('total') || header.includes('amount')) {
-          order.total_amount = parseFloat(value) || null
-        } else if (header.includes('currency')) {
-          order.currency = value || 'EUR'
-        } else if (header.includes('created') || header.includes('date')) {
-          order.created_at = value
-        } else if (header.includes('product') || header.includes('item')) {
-          // Handle order items (comma-separated or JSON)
-          if (!order.order_items) order.order_items = []
-          if (value) {
-            order.order_items.push({
-              product_name: value,
-              quantity: 1,
-              price: 0,
-            })
-          }
+        if (header === 'Lineitem name') {
+          lineItem.product_name = value
+        } else if (header === 'Lineitem quantity') {
+          lineItem.quantity = parseInt(value) || 1
+        } else if (header === 'Lineitem price') {
+          lineItem.price = parseFloat(value) || 0
+        } else if (header === 'Lineitem sku') {
+          lineItem.sku = value
         }
       })
 
+      // Add line item if it has a product name
+      if (lineItem.product_name) {
+        order.order_items.push(lineItem)
+      }
+    }
+
+    // Convert map to array and validate
+    const orders: any[] = []
+    for (const [orderNumber, order] of ordersMap.entries()) {
       // Ensure required fields
-      if (!order.shopify_order_number && !order.shopify_order_id) {
-        console.warn(`Skipping row ${i + 1}: missing order number/ID`)
+      if (!order.shopify_order_number) {
+        console.warn(`Skipping order ${orderNumber}: missing order number`)
         continue
       }
 
       if (!order.customer_first_name) {
-        console.warn(`Skipping row ${i + 1}: missing first name`)
-        continue
+        // Try to extract from email if no name found
+        if (order.customer_email) {
+          const emailParts = order.customer_email.split('@')[0]
+          order.customer_first_name = emailParts.split('.')[0] || emailParts
+        } else {
+          console.warn(`Skipping order ${orderNumber}: missing first name`)
+          continue
+        }
+      }
+
+      // Default values
+      if (!order.status) order.status = 'pending'
+      if (!order.currency) order.currency = 'EUR'
+      if (!order.order_items || order.order_items.length === 0) {
+        order.order_items = []
       }
 
       orders.push(order)
@@ -182,15 +248,22 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
         <div className="space-y-4">
           {/* Instructions */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h4 className="font-semibold text-blue-900 mb-2">CSV Formaat Vereisten:</h4>
+            <h4 className="font-semibold text-blue-900 mb-2">Shopify CSV Formaat:</h4>
+            <p className="text-sm text-blue-800 mb-2">
+              Het systeem ondersteunt de standaard Shopify export CSV (tab-gescheiden).
+            </p>
             <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
-              <li><strong>shopify_order_number</strong> of <strong>order_number</strong> (verplicht)</li>
-              <li><strong>customer_first_name</strong> of <strong>first_name</strong> (verplicht)</li>
-              <li><strong>customer_email</strong> of <strong>email</strong> (optioneel)</li>
-              <li><strong>status</strong> (optioneel: pending, confirmed, in_transit, delivered)</li>
-              <li><strong>total_amount</strong> (optioneel)</li>
-              <li><strong>created_at</strong> (optioneel)</li>
+              <li><strong>Order nummer</strong> (eerste kolom, format: #1751) - verplicht</li>
+              <li><strong>Billing Name</strong> of <strong>Shipping Name</strong> - gebruikt voor voornaam</li>
+              <li><strong>Order Email</strong> - klant e-mail</li>
+              <li><strong>Financial Status</strong> - order status</li>
+              <li><strong>Total</strong> - totaalbedrag</li>
+              <li><strong>Lineitem name</strong> - product naam</li>
+              <li><strong>Lineitem quantity</strong> - hoeveelheid</li>
             </ul>
+            <p className="text-xs text-blue-700 mt-2">
+              <strong>Let op:</strong> Elke regel in de CSV is een order item. Orders met meerdere items worden automatisch gegroepeerd.
+            </p>
           </div>
 
           {/* File Upload */}
