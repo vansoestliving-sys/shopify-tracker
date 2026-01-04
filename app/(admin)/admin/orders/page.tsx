@@ -14,7 +14,6 @@ import { OrderSkeleton } from '@/components/LoadingSkeleton'
 
 // Disable Next.js caching - always render dynamically
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 interface Order {
   id: string

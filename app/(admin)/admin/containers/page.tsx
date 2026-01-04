@@ -13,7 +13,6 @@ import { ContainerSkeleton } from '@/components/LoadingSkeleton'
 
 // Disable Next.js caching - always render dynamically
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 interface Container {
   id: string

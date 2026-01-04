@@ -14,9 +14,8 @@ import { useToast } from '@/hooks/useToast'
 import { StatsSkeleton, ContainerSkeleton } from '@/components/LoadingSkeleton'
 import Logo from '@/components/Logo'
 
-// Disable caching for this page
+// Disable caching for this page - force dynamic rendering
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 interface Container {
   id: string
