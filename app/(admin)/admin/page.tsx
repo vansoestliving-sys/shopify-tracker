@@ -656,7 +656,7 @@ export default function AdminDashboard() {
                           </button>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                          {order.customer_email}
+                          {order.customer_first_name || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-gray-700">
                           {container ? container.container_id : 'Not linked'}

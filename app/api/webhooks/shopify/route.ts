@@ -19,19 +19,35 @@ function verifyShopifyWebhook(data: string, hmac: string): boolean {
 // Handle new order webhook from Shopify
 export async function POST(request: NextRequest) {
   try {
-    console.log('🔔 Webhook received at:', new Date().toISOString())
+    const timestamp = new Date().toISOString()
+    console.log('🔔 Webhook received at:', timestamp)
     console.log('🔔 Webhook URL:', request.url)
+    console.log('🔔 Environment:', process.env.NODE_ENV)
+    console.log('🔔 Has webhook secret:', !!process.env.SHOPIFY_WEBHOOK_SECRET)
     
     const hmac = request.headers.get('x-shopify-hmac-sha256')
+    const shopifyShop = request.headers.get('x-shopify-shop-domain')
+    const shopifyTopic = request.headers.get('x-shopify-topic')
+    
+    console.log('🔔 Shopify headers:', {
+      hasHmac: !!hmac,
+      shop: shopifyShop,
+      topic: shopifyTopic,
+    })
+    
     const body = await request.text()
 
     if (!hmac || !verifyShopifyWebhook(body, hmac)) {
       console.error('❌ Invalid webhook signature')
+      console.error('❌ HMAC provided:', !!hmac)
+      console.error('❌ Webhook secret set:', !!process.env.SHOPIFY_WEBHOOK_SECRET)
       return NextResponse.json(
         { error: 'Invalid webhook signature' },
         { status: 401 }
       )
     }
+    
+    console.log('✅ Webhook signature verified')
 
     const shopifyOrder = JSON.parse(body)
     console.log('📦 Processing order:', shopifyOrder.order_number || shopifyOrder.id)
