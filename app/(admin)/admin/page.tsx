@@ -474,15 +474,6 @@ export default function AdminDashboard() {
                 <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
                 <span>{syncing ? 'Syncing...' : 'Orders'}</span>
               </button>
-              <button
-                onClick={() => handleSyncOrders(true)}
-                disabled={syncing}
-                className="flex items-center space-x-1.5 bg-[#FF914D] hover:bg-[#C4885E] disabled:bg-gray-400 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
-                title="Sync ALL orders from Shopify (may take 5-10 minutes)"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-                <span>{syncing ? 'Syncing All...' : 'Sync All'}</span>
-              </button>
             </div>
           </div>
         </div>
