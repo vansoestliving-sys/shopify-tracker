@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Edit, Filter, Download, RefreshCw, Eye } from 'lucide-react'
+import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
 import OrderEditModal from '@/components/OrderEditModal'
 import OrderDetailsModal from '@/components/OrderDetailsModal'
+import AddOrderModal from '@/components/AddOrderModal'
 import { ToastContainer } from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
 import { OrderSkeleton } from '@/components/LoadingSkeleton'
@@ -52,6 +53,7 @@ export default function OrdersPage() {
   }, [])
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
+  const [showAddOrderModal, setShowAddOrderModal] = useState(false)
   const [selectedOrders, setSelectedOrders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const toast = useToast()
@@ -249,6 +251,13 @@ export default function OrdersPage() {
               {statusFilter === 'unlinked' ? 'Bestellingen Niet Gekoppeld' : 'Alle Bestellingen'}
             </h1>
             <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setShowAddOrderModal(true)}
+                className="flex items-center gap-2 px-3 py-1.5 bg-[#FF914D] hover:bg-[#C4885E] text-white rounded-md text-sm font-medium transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Bestelling Toevoegen
+              </button>
               <button
                 onClick={() => {
                   setLoading(true)
@@ -503,6 +512,19 @@ export default function OrdersPage() {
         <OrderDetailsModal
           order={viewingOrder}
           onClose={() => setViewingOrder(null)}
+        />
+      )}
+
+      {/* Add Order Modal */}
+      {showAddOrderModal && (
+        <AddOrderModal
+          onClose={() => setShowAddOrderModal(false)}
+          onSave={() => {
+            fetchData()
+            setShowAddOrderModal(false)
+            toast.success('Bestelling succesvol toegevoegd')
+          }}
+          containers={containers.map(c => ({ id: c.id, container_id: c.container_id }))}
         />
       )}
 
