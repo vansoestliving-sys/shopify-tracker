@@ -88,8 +88,22 @@ export default function AdminDashboard() {
       setLoading(true)
       const cacheBuster = `?t=${Date.now()}`
       const [containersRes, ordersRes] = await Promise.all([
-        fetch(`/api/containers${cacheBuster}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
-        fetch(`/api/admin/orders${cacheBuster}`, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } }),
+        fetch(`/api/containers${cacheBuster}`, { 
+          cache: 'no-store', 
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          } 
+        }),
+        fetch(`/api/admin/orders${cacheBuster}`, { 
+          cache: 'no-store', 
+          headers: { 
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0'
+          } 
+        }),
       ])
 
       const containersData = await containersRes.json()
