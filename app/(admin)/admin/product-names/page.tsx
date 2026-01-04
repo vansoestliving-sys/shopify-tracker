@@ -128,7 +128,7 @@ export default function ProductNamesPage() {
       if (fetchError) throw fetchError
 
       if (!itemsToUpdate || itemsToUpdate.length === 0) {
-        toast.info('Geen items gevonden om bij te werken')
+        toast('Geen items gevonden om bij te werken', { icon: 'ℹ️' })
         return
       }
 
