@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = createSupabaseAdminClient()
     const body = await request.json()
-    const { orders } = body
+    const { orders, chunkIndex = 0, chunkSize = 100 } = body
 
     if (!orders || !Array.isArray(orders) || orders.length === 0) {
       return NextResponse.json(
@@ -19,12 +19,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Process in chunks to avoid timeout
+    const startIndex = chunkIndex * chunkSize
+    const endIndex = Math.min(startIndex + chunkSize, orders.length)
+    const chunk = orders.slice(startIndex, endIndex)
+    const hasMore = endIndex < orders.length
+
     let imported = 0
     let updated = 0
+    let skipped = 0
     let errors = 0
     const errorDetails: string[] = []
 
-    for (const orderData of orders) {
+    for (const orderData of chunk) {
       try {
         const {
           shopify_order_number,
@@ -61,6 +68,21 @@ export async function POST(request: NextRequest) {
           .select('id')
           .eq('shopify_order_number', finalOrderNumber)
           .single()
+
+        // Skip if order exists and has first name (already imported)
+        if (existingOrder && customer_first_name) {
+          // Check if order already has first name
+          const { data: existingOrderFull } = await supabase
+            .from('orders')
+            .select('customer_first_name')
+            .eq('id', existingOrder.id)
+            .single()
+          
+          if (existingOrderFull?.customer_first_name) {
+            skipped++
+            continue // Skip - already imported with first name
+          }
+        }
 
         // Find or create customer
         let customerId: string | null = null
@@ -217,8 +239,12 @@ export async function POST(request: NextRequest) {
       success: true,
       imported,
       updated,
+      skipped,
       errors,
+      processed: endIndex,
       total: orders.length,
+      hasMore,
+      nextChunkIndex: hasMore ? chunkIndex + 1 : null,
       errorDetails: errors > 0 ? errorDetails.slice(0, 10) : [], // Limit error details
     })
   } catch (error: any) {

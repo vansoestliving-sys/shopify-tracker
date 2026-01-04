@@ -272,31 +272,70 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
         return
       }
 
-      const response = await fetch('/api/admin/orders/import', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ orders }),
-      })
+      // Process in chunks to avoid timeout
+      const chunkSize = 50 // Process 50 orders at a time
+      let totalImported = 0
+      let totalUpdated = 0
+      let totalSkipped = 0
+      let totalErrors = 0
+      let chunkIndex = 0
+      let hasMore = true
 
-      const data = await response.json()
+      while (hasMore) {
+        const response = await fetch('/api/admin/orders/import', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            orders, 
+            chunkIndex, 
+            chunkSize 
+          }),
+        })
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Import mislukt')
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Import mislukt')
+        }
+
+        totalImported += data.imported || 0
+        totalUpdated += data.updated || 0
+        totalSkipped += data.skipped || 0
+        totalErrors += data.errors || 0
+
+        hasMore = data.hasMore || false
+        chunkIndex = data.nextChunkIndex || chunkIndex + 1
+
+        // Update loading message
+        const processed = data.processed || (chunkIndex * chunkSize)
+        const progress = Math.min(100, Math.round((processed / orders.length) * 100))
+        console.log(`Progress: ${processed}/${orders.length} (${progress}%)`)
+
+        // Small delay between chunks to avoid overwhelming the server
+        if (hasMore) {
+          await new Promise(resolve => setTimeout(resolve, 500))
+        }
       }
 
-      if (data.errors > 0) {
-        alert(`Import voltooid met ${data.imported} nieuwe orders, ${data.updated} bijgewerkt, ${data.errors} fouten.`)
-      } else {
-        alert(`Succesvol geïmporteerd: ${data.imported} nieuwe orders, ${data.updated} bijgewerkt.`)
+      // Show summary
+      let message = `Import voltooid!\n`
+      message += `✅ Nieuw: ${totalImported}\n`
+      message += `🔄 Bijgewerkt: ${totalUpdated}\n`
+      if (totalSkipped > 0) {
+        message += `⏭️ Overgeslagen (al aanwezig): ${totalSkipped}\n`
       }
+      if (totalErrors > 0) {
+        message += `❌ Fouten: ${totalErrors}`
+      }
+      alert(message)
 
       onSuccess()
       onClose()
     } catch (error: any) {
       console.error('Import error:', error)
-      setError(error.message || 'Fout bij importeren van CSV')
+      setError(error.message || 'Fout bij importeren van CSV. Je kunt het opnieuw proberen - bestaande orders worden overgeslagen.')
     } finally {
       setLoading(false)
     }
@@ -424,7 +463,7 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
               {loading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  Importeren...
+                  Importeren... (kan enkele minuten duren voor grote bestanden)
                 </>
               ) : (
                 <>
@@ -433,6 +472,11 @@ export default function CSVImportModal({ onClose, onSuccess }: CSVImportModalPro
                 </>
               )}
             </button>
+            {file && (
+              <p className="text-xs text-gray-500 text-center">
+                Grote bestanden worden in delen verwerkt. Bestaande orders worden automatisch overgeslagen.
+              </p>
+            )}
           </div>
         </div>
       </div>
