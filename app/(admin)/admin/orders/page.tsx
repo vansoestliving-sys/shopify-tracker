@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus } from 'lucide-react'
+import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
 import OrderEditModal from '@/components/OrderEditModal'
 import OrderDetailsModal from '@/components/OrderDetailsModal'
 import AddOrderModal from '@/components/AddOrderModal'
+import CSVImportModal from '@/components/CSVImportModal'
 import { ToastContainer } from '@/components/Toast'
 import { useToast } from '@/hooks/useToast'
 import { OrderSkeleton } from '@/components/LoadingSkeleton'
@@ -54,6 +55,7 @@ export default function OrdersPage() {
   const [editingOrder, setEditingOrder] = useState<Order | null>(null)
   const [viewingOrder, setViewingOrder] = useState<Order | null>(null)
   const [showAddOrderModal, setShowAddOrderModal] = useState(false)
+  const [showCSVImportModal, setShowCSVImportModal] = useState(false)
   const [selectedOrders, setSelectedOrders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const toast = useToast()
