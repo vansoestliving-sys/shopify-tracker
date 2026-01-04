@@ -33,38 +33,86 @@ export async function POST(
     // Get products in this container
     const { data: containerProducts, error: productsError } = await supabase
       .from('container_products')
-      .select('product_id, product:products(shopify_product_id)')
+      .select('product_id, product:products(shopify_product_id, name)')
       .eq('container_id', params.id)
 
     if (productsError) throw productsError
 
-    const productIds = containerProducts
+    const productShopifyIds = containerProducts
       .map((cp: any) => cp.product?.shopify_product_id)
       .filter(Boolean)
+    
+    const productNames = containerProducts
+      .map((cp: any) => cp.product?.name)
+      .filter(Boolean)
+      .map((name: string) => name.toLowerCase().trim())
 
-    if (productIds.length === 0) {
+    if (productShopifyIds.length === 0 && productNames.length === 0) {
       return NextResponse.json(
         { error: 'No products found in container' },
         { status: 400 }
       )
     }
 
-    // Find order items with these products
+    console.log('🔗 Linking orders - Container products:', {
+      containerId: params.id,
+      productShopifyIds: productShopifyIds.slice(0, 5),
+      productNames: productNames.slice(0, 5),
+      totalProducts: containerProducts.length,
+    })
+
+    // Find order items with these products - try both shopify_product_id and name matching
     let itemsQuery = supabase
       .from('order_items')
-      .select('order_id')
-      .in('shopify_product_id', productIds)
-
-    if (orderIds && orderIds.length > 0) {
-      itemsQuery = itemsQuery.in('order_id', orderIds)
+      .select('order_id, shopify_product_id, name')
+    
+    // Try matching by shopify_product_id first
+    if (productShopifyIds.length > 0) {
+      itemsQuery = itemsQuery.in('shopify_product_id', productShopifyIds)
     }
-
+    
     const { data: orderItems, error: itemsError } = await itemsQuery
 
     if (itemsError) throw itemsError
 
+    // Also try matching by product name (for CSV imported orders that might not have shopify_product_id)
+    let orderItemsByName: any[] = []
+    if (productNames.length > 0) {
+      const { data: allOrderItems, error: allItemsError } = await supabase
+        .from('order_items')
+        .select('order_id, shopify_product_id, name')
+      
+      if (!allItemsError && allOrderItems) {
+        orderItemsByName = allOrderItems.filter((item: any) => {
+          const itemName = item.name?.toLowerCase().trim()
+          return itemName && productNames.some((pn: string) => itemName.includes(pn) || pn.includes(itemName))
+        })
+      }
+    }
+
+    // Combine both results
+    const allMatchingItems = [
+      ...(orderItems || []),
+      ...orderItemsByName.filter((item: any) => 
+        !orderItems?.some((oi: any) => oi.order_id === item.order_id)
+      )
+    ]
+
+    // Filter by orderIds if provided
+    let finalItems = allMatchingItems
+    if (orderIds && orderIds.length > 0) {
+      finalItems = allMatchingItems.filter((item: any) => orderIds.includes(item.order_id))
+    }
+
+    console.log('🔗 Matching order items:', {
+      byShopifyId: orderItems?.length || 0,
+      byName: orderItemsByName.length,
+      total: allMatchingItems.length,
+      final: finalItems.length,
+    })
+
     // Get unique order IDs
-    const uniqueOrderIds = Array.from(new Set(orderItems.map((item: any) => item.order_id).filter(Boolean)))
+    const uniqueOrderIds = Array.from(new Set(finalItems.map((item: any) => item.order_id).filter(Boolean)))
 
     if (uniqueOrderIds.length === 0) {
       return NextResponse.json({
