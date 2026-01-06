@@ -141,7 +141,7 @@ export async function DELETE(
         } else if (ordersToReallocate && ordersToReallocate.length > 0) {
           console.log(`🔄 Reallocating ${ordersToReallocate.length} order(s) after deletion`)
           
-          // Unlink these orders so they can be reallocated
+          // Unlink these orders first
           const orderIds = ordersToReallocate.map((o: any) => o.id)
           const { error: unlinkError } = await supabase
             .from('orders')
@@ -155,9 +155,128 @@ export async function DELETE(
           if (unlinkError) {
             console.error('Error unlinking orders for reallocation:', unlinkError)
           } else {
-            console.log(`✅ Unlinked ${orderIds.length} order(s) for reallocation`)
-            // Note: Admin can manually run "Slim Toewijzen" to reallocate, or we could trigger it here
-            // For now, we just unlink them so they can be reallocated
+            console.log(`✅ Unlinked ${orderIds.length} order(s), triggering reallocation...`)
+            
+            // Trigger automatic reallocation by calling the allocation logic
+            // We'll reallocate these specific orders to the same container (they'll shift up)
+            try {
+              // Get container details
+              const { data: container } = await supabase
+                .from('containers')
+                .select('id, eta')
+                .eq('id', containerId)
+                .single()
+
+              if (container) {
+                // Get container products to check availability
+                const { data: containerProducts } = await supabase
+                  .from('container_products')
+                  .select(`
+                    product_id,
+                    quantity,
+                    product:products(name)
+                  `)
+                  .eq('container_id', containerId)
+
+                // Get order items for orders to reallocate
+                const { data: orderItems } = await supabase
+                  .from('order_items')
+                  .select('order_id, name, quantity')
+                  .in('order_id', orderIds)
+
+                // Group items by order
+                const orderItemsMap: Record<string, any[]> = {}
+                orderItems?.forEach((item: any) => {
+                  if (!orderItemsMap[item.order_id]) {
+                    orderItemsMap[item.order_id] = []
+                  }
+                  orderItemsMap[item.order_id].push(item)
+                })
+
+                // Build container inventory
+                const inventory: Record<string, number> = {}
+                containerProducts?.forEach((cp: any) => {
+                  const productName = cp.product?.name?.toLowerCase().trim()
+                  if (productName) {
+                    inventory[productName] = cp.quantity || 0
+                  }
+                })
+
+                // Get currently allocated quantities in this container (excluding the ones we just unlinked)
+                const { data: currentOrders } = await supabase
+                  .from('orders')
+                  .select('id')
+                  .eq('container_id', containerId)
+
+                const currentOrderIds = currentOrders?.map((o: any) => o.id) || []
+                
+                if (currentOrderIds.length > 0) {
+                  const { data: allocatedItems } = await supabase
+                    .from('order_items')
+                    .select('name, quantity')
+                    .in('order_id', currentOrderIds)
+
+                  // Deduct allocated quantities
+                  allocatedItems?.forEach((item: any) => {
+                    const productName = item.name?.toLowerCase().trim()
+                    if (productName && !productName.includes('draaifunctie')) {
+                      inventory[productName] = (inventory[productName] || 0) - (item.quantity || 1)
+                    }
+                  })
+                }
+
+                // Reallocate orders in chronological order
+                const sortedOrders = ordersToReallocate.sort((a: any, b: any) => 
+                  new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                )
+
+                for (const order of sortedOrders) {
+                  const items = orderItemsMap[order.id] || []
+                  
+                  // Calculate required products (excluding turn function)
+                  const requiredProducts: Record<string, number> = {}
+                  items.forEach((item: any) => {
+                    const productName = item.name?.toLowerCase().trim()
+                    if (productName && !productName.includes('draaifunctie')) {
+                      requiredProducts[productName] = (requiredProducts[productName] || 0) + (item.quantity || 1)
+                    }
+                  })
+
+                  // Check if container has enough stock
+                  let canFulfill = true
+                  for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+                    if ((inventory[productName] || 0) < requiredQty) {
+                      canFulfill = false
+                      break
+                    }
+                  }
+
+                  if (canFulfill) {
+                    // Link order to container
+                    await supabase
+                      .from('orders')
+                      .update({
+                        container_id: containerId,
+                        delivery_eta: container.eta,
+                        updated_at: new Date().toISOString(),
+                      })
+                      .eq('id', order.id)
+
+                    // Deduct from inventory
+                    for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+                      inventory[productName] = (inventory[productName] || 0) - requiredQty
+                    }
+
+                    console.log(`✅ Reallocated order ${order.id} to container ${containerId}`)
+                  } else {
+                    console.log(`⚠️ Order ${order.id} cannot be reallocated - insufficient stock`)
+                  }
+                }
+              }
+            } catch (reallocErr: any) {
+              console.error('Error during automatic reallocation:', reallocErr)
+              // Don't fail the delete if reallocation fails
+            }
           }
         }
       } catch (reallocErr: any) {
