@@ -98,6 +98,25 @@ export async function DELETE(
   try {
     const supabase = createSupabaseAdminClient()
 
+    // Get order details before deleting (to check container and created_at)
+    const { data: orderToDelete, error: fetchError } = await supabase
+      .from('orders')
+      .select('id, container_id, created_at')
+      .eq('id', params.id)
+      .single()
+
+    if (fetchError) throw fetchError
+
+    if (!orderToDelete) {
+      return NextResponse.json(
+        { error: 'Order not found' },
+        { status: 404 }
+      )
+    }
+
+    const containerId = orderToDelete.container_id
+    const deletedOrderDate = orderToDelete.created_at
+
     // Delete order (order_items will be deleted automatically due to CASCADE)
     const { error } = await supabase
       .from('orders')
@@ -106,7 +125,52 @@ export async function DELETE(
 
     if (error) throw error
 
-    return NextResponse.json({ success: true, message: 'Order deleted successfully' })
+    // If order was linked to a container, reallocate newer orders in that container
+    if (containerId && deletedOrderDate) {
+      try {
+        // Find all orders in the same container that were created AFTER the deleted order
+        const { data: ordersToReallocate, error: reallocError } = await supabase
+          .from('orders')
+          .select('id, created_at')
+          .eq('container_id', containerId)
+          .gt('created_at', deletedOrderDate)
+          .order('created_at', { ascending: true })
+
+        if (reallocError) {
+          console.error('Error finding orders to reallocate:', reallocError)
+        } else if (ordersToReallocate && ordersToReallocate.length > 0) {
+          console.log(`🔄 Reallocating ${ordersToReallocate.length} order(s) after deletion`)
+          
+          // Unlink these orders so they can be reallocated
+          const orderIds = ordersToReallocate.map((o: any) => o.id)
+          const { error: unlinkError } = await supabase
+            .from('orders')
+            .update({ 
+              container_id: null,
+              delivery_eta: null,
+              updated_at: new Date().toISOString(),
+            })
+            .in('id', orderIds)
+
+          if (unlinkError) {
+            console.error('Error unlinking orders for reallocation:', unlinkError)
+          } else {
+            console.log(`✅ Unlinked ${orderIds.length} order(s) for reallocation`)
+            // Note: Admin can manually run "Slim Toewijzen" to reallocate, or we could trigger it here
+            // For now, we just unlink them so they can be reallocated
+          }
+        }
+      } catch (reallocErr: any) {
+        console.error('Error during reallocation process:', reallocErr)
+        // Don't fail the delete if reallocation fails
+      }
+    }
+
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Order deleted successfully',
+      reallocated: containerId ? 'Orders unlinked for reallocation' : null
+    })
   } catch (error: any) {
     console.error('Error deleting order:', error)
     return NextResponse.json(

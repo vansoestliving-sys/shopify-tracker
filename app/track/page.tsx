@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Package, Calendar, Truck, CheckCircle } from 'lucide-react'
+import { Calendar } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import Logo from '@/components/Logo'
 
@@ -61,18 +61,6 @@ export default function TrackPage() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'delivered':
-        return 'bg-green-100 text-green-800'
-      case 'in_transit':
-        return 'bg-blue-100 text-blue-800'
-      case 'confirmed':
-        return 'bg-yellow-100 text-yellow-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
-  }
 
   return (
     <div className="min-h-screen py-8 px-4 relative overflow-hidden">
@@ -155,80 +143,50 @@ export default function TrackPage() {
 
         {order && (
           <div className="glass-card rounded-2xl p-8 shadow-2xl">
-            {/* Order Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 pb-6 border-b-2 border-gray-200">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 mb-1">
-                  Order #{order.shopify_order_number || 'N/A'}
-                </h2>
-                <p className="text-xs text-gray-500">Tracking ID: {order.tracking_id || 'N/A'}</p>
-              </div>
-              <span className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-wide mt-3 sm:mt-0 ${getStatusColor(order.status)}`}>
-                {order.status.replace('_', ' ')}
-              </span>
+            {/* Order Header - Simplified */}
+            <div className="mb-6 pb-6 border-b-2 border-gray-200">
+              <h2 className="text-xl font-bold text-gray-900 mb-1">
+                Bestelling #{order.shopify_order_number || 'N/A'}
+              </h2>
+              <p className="text-sm text-gray-600">
+                Klant: {order.customer_first_name || 'N/A'}
+              </p>
             </div>
 
-            {/* Order Info Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="glass-card rounded-lg p-4">
-                <div className="flex items-start space-x-3">
-                  <div className="p-2 bg-logo-100 rounded-lg">
-                    <Package className="w-5 h-5 text-logo-300" />
+            {/* Delivery Date - Simplified */}
+            {order.delivery_eta && (
+              <div className="mb-6">
+                <div className="glass-card rounded-lg p-6 text-center">
+                  <div className="flex items-center justify-center space-x-3 mb-3">
+                    <div className="p-3 bg-primary-100 rounded-lg">
+                      <Calendar className="w-6 h-6 text-primary-400" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Verwachte Levering</p>
+                      <p className="text-2xl font-bold text-gray-900">
+                        {(() => {
+                          const deliveryDate = new Date(order.delivery_eta)
+                          const today = new Date()
+                          today.setHours(0, 0, 0, 0)
+                          deliveryDate.setHours(0, 0, 0, 0)
+                          
+                          // If delivery date is in the past, show "Levering binnen enkele dagen"
+                          if (deliveryDate < today) {
+                            return 'Levering binnen enkele dagen'
+                          }
+                          return formatDate(order.delivery_eta)
+                        })()}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Klant</p>
-                    <p className="font-semibold text-gray-900 text-sm">
-                      {order.customer_first_name || 'N/A'}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-0.5">{order.customer_email}</p>
-                  </div>
+                  
+                  {/* Delivery Information Text */}
+                  <p className="text-sm text-gray-600 mt-4 italic">
+                    Rond het moment dat je bestelling klaar is voor levering, word je telefonisch benaderd door de vervoerder. Samen plannen jullie een definitieve leveringsdag die het beste voor jou uitkomt.
+                  </p>
                 </div>
               </div>
-
-              {order.container && (
-                <>
-                  <div className="glass-card rounded-lg p-4">
-                    <div className="flex items-start space-x-3">
-                      <div className="p-2 bg-primary-100 rounded-lg">
-                        <Truck className="w-5 h-5 text-primary-400" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Container</p>
-                        <p className="font-semibold text-gray-900 text-sm">{order.container.container_id}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="glass-card rounded-lg p-4">
-                    <div className="flex items-start space-x-3">
-                      <div className="p-2 bg-logo-100 rounded-lg">
-                        <Calendar className="w-5 h-5 text-logo-300" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Verwachte Levering</p>
-                        <p className="font-semibold text-gray-900 text-sm">
-                          {formatDate(order.delivery_eta)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="glass-card rounded-lg p-4">
-                    <div className="flex items-start space-x-3">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <CheckCircle className="w-5 h-5 text-green-600" />
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Container Status</p>
-                        <p className="font-semibold text-gray-900 text-sm">
-                          {order.container.status.replace('_', ' ').toUpperCase()}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+            )}
 
             {/* Order Items */}
             <div className="border-t-2 border-gray-200 pt-6">
