@@ -270,6 +270,15 @@ export async function DELETE(
                     console.log(`✅ Reallocated order ${order.id} to container ${containerId}`)
                   } else {
                     console.log(`⚠️ Order ${order.id} cannot be reallocated - insufficient stock`)
+                    // If can't reallocate to same container, unlink it so it can be allocated elsewhere
+                    await supabase
+                      .from('orders')
+                      .update({
+                        container_id: null,
+                        delivery_eta: null,
+                        updated_at: new Date().toISOString(),
+                      })
+                      .eq('id', order.id)
                   }
                 }
               }

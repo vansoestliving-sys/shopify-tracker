@@ -203,7 +203,7 @@ export default function OrdersPage() {
   }
 
   const handleDeleteOrder = async (orderId: string, orderNumber: string) => {
-    if (!confirm(`Weet je zeker dat je bestelling #${orderNumber} wilt verwijderen? Dit kan niet ongedaan worden gemaakt.`)) {
+    if (!confirm(`Weet je zeker dat je bestelling #${orderNumber} wilt verwijderen? Nieuwere bestellingen in dezelfde container worden automatisch opnieuw toegewezen.`)) {
       return
     }
 
@@ -217,8 +217,13 @@ export default function OrdersPage() {
         throw new Error(data.error || 'Failed to delete order')
       }
 
-      toast.success(`Bestelling #${orderNumber} verwijderd`)
-      fetchData()
+      const data = await response.json()
+      toast.success(`Bestelling #${orderNumber} verwijderd${data.reallocated ? '. Bestellingen worden opnieuw toegewezen...' : ''}`)
+      
+      // Refresh data after a short delay to see reallocation
+      setTimeout(() => {
+        fetchData()
+      }, 1000)
     } catch (error: any) {
       console.error('Delete error:', error)
       toast.error(`Fout bij verwijderen: ${error.message}`)
