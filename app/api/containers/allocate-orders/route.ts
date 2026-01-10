@@ -88,12 +88,24 @@ export async function POST(request: NextRequest) {
       })),
     })
 
-    // 4. Get all UNLINKED orders (chronologically)
-    const { data: orders, error: ordersError } = await supabase
+    // 4. Get ALL orders (both unlinked AND linked) for reallocation
+    // This allows moving orders from later containers to earlier ones when space opens up
+    const { data: allOrders, error: ordersError } = await supabase
       .from('orders')
-      .select('id, shopify_order_number, created_at')
-      .is('container_id', null) // Only get orders with NULL container_id
+      .select('id, shopify_order_number, created_at, container_id')
       .order('created_at', { ascending: true }) // Oldest first
+
+    if (ordersError) {
+      console.error('Error fetching orders:', ordersError)
+      throw ordersError
+    }
+
+    // Separate unlinked and linked orders
+    const unlinkedOrders = (allOrders || []).filter((o: any) => !o.container_id)
+    const linkedOrders = (allOrders || []).filter((o: any) => o.container_id)
+    
+    // For reallocation, we'll process unlinked first, then try to move linked orders to earlier containers
+    const orders = [...unlinkedOrders, ...linkedOrders]
 
     if (ordersError) {
       console.error('Error fetching orders:', ordersError)
