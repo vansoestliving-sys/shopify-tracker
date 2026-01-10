@@ -26,13 +26,18 @@ export async function POST(request: NextRequest) {
 
     const order = JSON.parse(body)
 
+    const refunds = order.refunds || []
+    
     console.log('🔄 Refund webhook received:', {
       orderId: order.id,
       orderNumber: order.name,
       financialStatus: order.financial_status,
       cancelledAt: order.cancelled_at,
-      restockLineItems: order.restock_line_items,
-      refunds: order.refunds?.length || 0,
+      refunds: refunds.length,
+      refundDetails: refunds.map((r: any) => ({
+        restock: r.restock,
+        restockType: r.refund_line_items?.[0]?.restock_type,
+      })),
     })
 
     const supabase = createSupabaseAdminClient()
@@ -52,7 +57,24 @@ export async function POST(request: NextRequest) {
     // Check if order is refunded or cancelled
     const isRefunded = order.financial_status === 'refunded'
     const isCancelled = order.cancelled_at !== null && order.cancelled_at !== undefined
-    const shouldRestock = order.restock_line_items === true
+    
+    // Check if any refund has restock enabled
+    // Shopify stores restock info in refunds[].restock (boolean) or refunds[].refund_line_items[].restock_type
+    const shouldRestock = refunds.some((refund: any) => {
+      // Check refund-level restock flag
+      if (refund.restock === true) return true
+      
+      // Check line-item level restock (restock_type can be 'legacy_restock', 'cancel', 'return', 'no_restock')
+      if (refund.refund_line_items && refund.refund_line_items.length > 0) {
+        return refund.refund_line_items.some((item: any) => {
+          const restockType = item.restock_type
+          // 'no_restock' means items were NOT restocked, anything else means they were
+          return restockType && restockType !== 'no_restock'
+        })
+      }
+      
+      return false
+    })
 
     if (!isRefunded && !isCancelled) {
       console.log('ℹ️ Order is not refunded or cancelled, skipping')
@@ -64,8 +86,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: 'Restock not checked, skipping' })
     }
 
-    // Get refunds to determine if full or partial
-    const refunds = order.refunds || []
+    // Calculate total refunded amount to determine if full or partial
     const totalRefunded = refunds.reduce((sum: number, refund: any) => {
       return sum + (parseFloat(refund.amount || 0))
     }, 0)
