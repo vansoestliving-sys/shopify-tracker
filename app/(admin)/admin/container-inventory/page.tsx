@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { toast } from 'react-hot-toast'
 import Navigation from '@/components/Navigation'
-import { Package, RefreshCw, Edit2, Save, X } from 'lucide-react'
+import { Package, RefreshCw, Edit2, Save, X, ShoppingBag, User, Calendar } from 'lucide-react'
+import { formatDate } from '@/lib/utils'
 
 interface Container {
   id: string
@@ -33,6 +34,22 @@ interface ContainerInventory {
   remaining: Record<string, number> // product_id -> remaining quantity
 }
 
+interface ContainerOrder {
+  id: string
+  shopify_order_number: string | null
+  customer_email: string
+  customer_first_name: string | null
+  delivery_eta: string | null
+  status: string
+  total_amount: number | null
+  currency: string
+  items: Array<{
+    name: string
+    quantity: number
+    price: number | null
+  }>
+}
+
 export default function ContainerInventoryPage() {
   const router = useRouter()
   const supabase = createClientComponentClient()
@@ -41,6 +58,9 @@ export default function ContainerInventoryPage() {
   const [inventory, setInventory] = useState<ContainerInventory[]>([])
   const [editing, setEditing] = useState<Record<string, Record<string, number>>>({})
   const [saving, setSaving] = useState(false)
+  const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null)
+  const [containerOrders, setContainerOrders] = useState<ContainerOrder[]>([])
+  const [loadingOrders, setLoadingOrders] = useState(false)
 
   useEffect(() => {
     checkUser()
@@ -239,6 +259,70 @@ export default function ContainerInventoryPage() {
     setEditing(newEditing)
   }
 
+  const handleViewContainerOrders = async (containerId: string) => {
+    setSelectedContainerId(containerId)
+    setLoadingOrders(true)
+    try {
+      // Fetch orders for this container
+      const { data: orders, error: ordersError } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          shopify_order_number,
+          customer_email,
+          customer_first_name,
+          delivery_eta,
+          status,
+          total_amount,
+          currency
+        `)
+        .eq('container_id', containerId)
+        .order('created_at', { ascending: true })
+
+      if (ordersError) throw ordersError
+
+      // Fetch order items for these orders
+      const orderIds = orders?.map((o: any) => o.id) || []
+      let orderItems: any[] = []
+      
+      if (orderIds.length > 0) {
+        const { data: items, error: itemsError } = await supabase
+          .from('order_items')
+          .select('order_id, name, quantity, price')
+          .in('order_id', orderIds)
+
+        if (itemsError) throw itemsError
+        orderItems = items || []
+      }
+
+      // Combine orders with their items
+      const ordersWithItems: ContainerOrder[] = (orders || []).map((order: any) => ({
+        id: order.id,
+        shopify_order_number: order.shopify_order_number,
+        customer_email: order.customer_email,
+        customer_first_name: order.customer_first_name,
+        delivery_eta: order.delivery_eta,
+        status: order.status,
+        total_amount: order.total_amount,
+        currency: order.currency || 'EUR',
+        items: orderItems
+          .filter((item: any) => item.order_id === order.id)
+          .map((item: any) => ({
+            name: item.name,
+            quantity: item.quantity || 1,
+            price: item.price,
+          })),
+      }))
+
+      setContainerOrders(ordersWithItems)
+    } catch (error: any) {
+      console.error('Error fetching container orders:', error)
+      toast.error('Fout bij ophalen bestellingen')
+    } finally {
+      setLoadingOrders(false)
+    }
+  }
+
   return (
     <div className="min-h-screen">
       <Navigation user={user || { email: '' }} onLogout={() => router.push('/')} isAdmin={true} />
@@ -268,8 +352,13 @@ export default function ContainerInventoryPage() {
             {inventory.map((inv) => (
               <div key={inv.container.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h2 className="text-lg font-semibold text-gray-900">
+                  <div className="flex-1">
+                    <h2 
+                      className="text-lg font-semibold text-gray-900 flex items-center gap-2 cursor-pointer hover:text-primary-400 transition-colors"
+                      onClick={() => handleViewContainerOrders(inv.container.id)}
+                      title="Klik om bestellingen te bekijken"
+                    >
+                      <Package className="w-5 h-5 text-primary-400" />
                       Container {inv.container.container_id}
                     </h2>
                     <p className="text-sm text-gray-500">
@@ -401,9 +490,120 @@ export default function ContainerInventoryPage() {
         )}
 
         <div className="mt-6 text-sm text-gray-500">
-          <p>💡 <strong>Tip:</strong> Klik op het bewerk-icoon om de totale hoeveelheid aan te passen. Het resterende bedrag wordt automatisch berekend.</p>
+          <p>💡 <strong>Tip:</strong> Klik op de container naam om gekoppelde bestellingen te bekijken. Klik op het bewerk-icoon om de totale hoeveelheid aan te passen.</p>
         </div>
       </div>
+
+      {/* Container Orders Modal */}
+      {selectedContainerId && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">
+                  Bestellingen voor Container {inventory.find(inv => inv.container.id === selectedContainerId)?.container.container_id}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {containerOrders.length} bestelling(en) gekoppeld
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedContainerId(null)
+                  setContainerOrders([])
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingOrders ? (
+                <div className="text-center py-12 text-gray-500">Laden...</div>
+              ) : containerOrders.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  Geen bestellingen gekoppeld aan deze container
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {containerOrders.map((order) => (
+                    <div key={order.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-3 mb-2">
+                            <ShoppingBag className="w-5 h-5 text-primary-400" />
+                            <h3 className="text-lg font-semibold text-gray-900">
+                              Bestelling #{order.shopify_order_number || 'N/A'}
+                            </h3>
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${
+                              order.status === 'fulfilled' ? 'bg-green-100 text-green-800' :
+                              order.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              order.status === 'cancelled' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {order.status.replace('_', ' ').toUpperCase()}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                            <div className="flex items-center gap-2 text-gray-600">
+                              <User className="w-4 h-4" />
+                              <span>{order.customer_first_name || 'N/A'} ({order.customer_email})</span>
+                            </div>
+                            {order.delivery_eta && (
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <Calendar className="w-4 h-4" />
+                                <span>ETA: {formatDate(order.delivery_eta)}</span>
+                              </div>
+                            )}
+                            {order.total_amount && (
+                              <div className="flex items-center gap-2 text-gray-600">
+                                <span className="font-semibold">{order.currency} {order.total_amount.toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {order.items && order.items.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <h4 className="text-sm font-semibold text-gray-700 mb-2">Artikelen:</h4>
+                          <div className="space-y-1">
+                            {order.items.map((item, idx) => (
+                              <div key={idx} className="flex justify-between items-center text-sm">
+                                <span className="text-gray-700">
+                                  {item.name} <span className="text-gray-500">(x{item.quantity})</span>
+                                </span>
+                                {item.price && (
+                                  <span className="text-gray-600 font-medium">
+                                    {order.currency} {(item.price * item.quantity).toFixed(2)}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setSelectedContainerId(null)
+                  setContainerOrders([])
+                }}
+                className="w-full px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 transition-colors"
+              >
+                Sluiten
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
