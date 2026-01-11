@@ -14,6 +14,9 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient()
 
+    // Strip leading "#" from order ID if present
+    const cleanOrderId = orderId.toString().replace(/^#+/, '').trim()
+
     // Find order by Shopify order number and first name (case-insensitive)
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
           quantity
         )
       `)
-      .eq('shopify_order_number', orderId.toString())
+      .eq('shopify_order_number', cleanOrderId)
       .ilike('customer_first_name', firstName)
 
     // Filter by case-insensitive first name match
