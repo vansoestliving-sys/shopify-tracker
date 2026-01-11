@@ -105,7 +105,7 @@ export default function TrackPage() {
                   placeholder="123456"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Te vinden in uw Shopify bestelbevestigingsmail
+                  Te vinden in uw bestelbevestigingsmail
                 </p>
               </div>
 
