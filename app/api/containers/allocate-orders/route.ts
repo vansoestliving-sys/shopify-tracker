@@ -222,8 +222,17 @@ export async function POST(request: NextRequest) {
 
     for (const order of orders) {
       const items = orderItemsMap[order.id] || []
+      const orderNum = order.shopify_order_number?.toString() || ''
+      const isDebugOrder = ['1809', '1810', '1811', '1812'].includes(orderNum)
+      
+      if (isDebugOrder) {
+        console.log(`🔍 Processing order #${orderNum}, items count: ${items.length}`)
+      }
       
       if (items.length === 0) {
+        if (isDebugOrder) {
+          console.log(`❌ Order #${orderNum} has no items`)
+        }
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
@@ -250,9 +259,9 @@ export async function POST(request: NextRequest) {
       }
 
       // Debug logging for specific orders
-      if (order.shopify_order_number && ['1809', '1810', '1811', '1812'].includes(order.shopify_order_number)) {
-        console.log(`📋 Order #${order.shopify_order_number} requires:`, requiredProducts)
-        console.log(`📋 Order #${order.shopify_order_number} items:`, items.map((i: any) => ({ name: i.name, qty: i.quantity })))
+      if (isDebugOrder) {
+        console.log(`📋 Order #${orderNum} requires:`, requiredProducts)
+        console.log(`📋 Order #${orderNum} items:`, items.map((i: any) => ({ name: i.name, qty: i.quantity })))
       }
 
       // If order only has turn function (no chairs), skip it
@@ -303,13 +312,13 @@ export async function POST(request: NextRequest) {
           const available = inventory[productName]?.quantity || 0
           
           // Debug logging for first few orders
-          if (order.shopify_order_number && ['1809', '1810', '1811', '1812'].includes(order.shopify_order_number)) {
-            console.log(`🔍 Order #${order.shopify_order_number} checking ${container?.container_id}: needs ${requiredQty}x "${productName}", available: ${available}`)
+          if (isDebugOrder) {
+            console.log(`🔍 Order #${orderNum} checking ${container?.container_id}: needs ${requiredQty}x "${productName}", available: ${available}`)
           }
           
           if (available < requiredQty) {
             canFulfill = false
-            if (order.shopify_order_number && ['1809', '1810', '1811', '1812'].includes(order.shopify_order_number)) {
+            if (isDebugOrder) {
               console.log(`❌ ${container?.container_id} cannot fulfill: ${productName} (need ${requiredQty}, have ${available})`)
             }
             break
@@ -406,12 +415,13 @@ export async function POST(request: NextRequest) {
           : 'Unknown products (check order items)'
         
         // Log order items for debugging
-        if (productKeys.length === 0) {
-          console.log(`⚠️ Order #${order.shopify_order_number} has no matching products. Order items:`, items.map((i: any) => ({
+        if (productKeys.length === 0 || isDebugOrder) {
+          console.log(`⚠️ Order #${orderNum} has no matching products. Order items:`, items.map((i: any) => ({
             name: i.name,
             quantity: i.quantity,
             product_id: i.product_id,
           })))
+          console.log(`⚠️ Order #${orderNum} requiredProducts after filtering:`, requiredProducts)
         }
         
         skipped.push({
