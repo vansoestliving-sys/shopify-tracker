@@ -191,7 +191,15 @@ export async function POST(request: NextRequest) {
     })
 
     // 6. Allocate orders to containers based on available quantities
-    const allocations: { orderId: string, containerId: string, eta: string | null }[] = []
+    const allocations: { 
+      orderId: string
+      containerId: string
+      eta: string | null
+      isReallocation?: boolean
+      fromContainer?: string | null
+      toContainer?: string | null
+      orderNumber?: string | null
+    }[] = []
     const skipped: { orderId: string, orderNumber: string, reason: string, productsNeeded?: string }[] = []
     const containerMap = new Map(sortedContainers.map((c: any) => [c.id, c]))
 
