@@ -172,7 +172,11 @@ export async function POST(request: NextRequest) {
     }
 
     // CRITICAL: Sort ALL orders by created_at (oldest first) to ensure chronological allocation
-    // This ensures oldest orders go to earliest containers, newest orders to later containers
+    // CHRONOLOGICAL ORDER GUARANTEE:
+    // 1. Orders are processed oldest-first (this sort)
+    // 2. Each order gets the EARLIEST container with space (see allocation logic below)
+    // 3. Result: Oldest orders → earliest containers, newest orders → later containers
+    // This ensures customers who ordered first get earlier delivery dates
     const allOrdersCombined = [...unlinkedOrders, ...linkedOrders]
     const orders = allOrdersCombined.sort((a: any, b: any) => {
       const aDate = a.created_at ? new Date(a.created_at).getTime() : 0
@@ -397,30 +401,34 @@ export async function POST(request: NextRequest) {
 
         if (canFulfill) {
           // This container can fulfill the order
-          // For already-linked orders:
-          //   - If current container is FULL: move to ANY container with space (prefer earliest)
-          //   - If current container has space: only move to EARLIER container
-          // For unlinked orders: always allocate to first available (earliest)
+          // CHRONOLOGICAL ORDER RULE: Since orders are processed oldest-first,
+          // each order should get the EARLIEST container with space to maintain:
+          // - Oldest orders → earliest containers
+          // - Newest orders → later containers
           if (currentContainerId) {
             if (containerId === currentContainerId) {
               // Same container - keep it if it has space
               allocatedContainer = containerId
               break
             } else if (!currentContainerCanFulfill) {
-              // Current container is FULL - move to ANY container with space (prefer earliest)
-              // Since we're iterating earliest-first, first match is best
+              // Current container is FULL - move to EARLIEST container with space
+              // Since we iterate earliest-first, first match is the earliest available
+              // This maintains chronological order: older orders get earlier containers
               allocatedContainer = containerId
               break
             } else if (newEta < currentContainerEta) {
               // Current container has space, but this is EARLIER - move to it
+              // This improves chronological order (older orders in earlier containers)
               allocatedContainer = containerId
               break
             } else {
-              // Current container has space and this is later - skip it
+              // Current container has space and this container is LATER - don't move
+              // Moving to a later container would break chronological order
               continue
             }
           } else {
-            // Unlinked order - allocate to first available (earliest) container
+            // Unlinked order - allocate to EARLIEST available container
+            // This ensures chronological order: oldest unlinked orders get earliest containers
             allocatedContainer = containerId
             break
           }
