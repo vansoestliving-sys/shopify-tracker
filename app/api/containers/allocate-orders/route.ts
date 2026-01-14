@@ -368,7 +368,20 @@ export async function POST(request: NextRequest) {
         }
       } else {
         // Log why this order was skipped
-        const productsNeeded = Object.keys(requiredProducts).join(', ')
+        const productKeys = Object.keys(requiredProducts)
+        const productsNeeded = productKeys.length > 0 
+          ? productKeys.join(', ') 
+          : 'Unknown products (check order items)'
+        
+        // Log order items for debugging
+        if (productKeys.length === 0) {
+          console.log(`⚠️ Order #${order.shopify_order_number} has no matching products. Order items:`, items.map((i: any) => ({
+            name: i.name,
+            quantity: i.quantity,
+            product_id: i.product_id,
+          })))
+        }
+        
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
