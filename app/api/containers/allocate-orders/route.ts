@@ -104,15 +104,67 @@ export async function POST(request: NextRequest) {
     const unlinkedOrders = (allOrders || []).filter((o: any) => !o.container_id)
     const linkedOrders = (allOrders || []).filter((o: any) => o.container_id)
     
+    console.log(`📋 Found ${unlinkedOrders.length} unlinked orders and ${linkedOrders.length} already-linked orders`)
+
+    // IMPORTANT: Deduct already-linked orders from container inventory BEFORE allocating new ones
+    // This ensures we don't allocate to containers that are already full
+    if (linkedOrders.length > 0) {
+      const linkedOrderIds = linkedOrders.map((o: any) => o.id)
+      const { data: linkedOrderItems, error: linkedItemsError } = await supabase
+        .from('order_items')
+        .select('id, order_id, name, quantity')
+        .in('order_id', linkedOrderIds)
+
+      if (linkedItemsError) {
+        console.error('Error fetching linked order items:', linkedItemsError)
+        throw linkedItemsError
+      }
+
+      console.log(`📦 Deducting ${linkedOrderItems?.length || 0} items from already-linked orders`)
+
+      // Deduct quantities from containers that already have orders
+      linkedOrderItems?.forEach((item: any) => {
+        const order = linkedOrders.find((o: any) => o.id === item.order_id)
+        if (!order || !order.container_id) return
+
+        const containerId = order.container_id
+        const productName = item.name?.toLowerCase().trim()
+        
+        if (productName && containerInventory[containerId]?.[productName]) {
+          // Skip turn function - not tracked
+          if (productName.includes('draaifunctie') || productName.includes('turn function')) {
+            return
+          }
+          
+          const itemQty = item.quantity || 1
+          const currentQty = containerInventory[containerId][productName].quantity || 0
+          containerInventory[containerId][productName].quantity = Math.max(0, currentQty - itemQty)
+        }
+      })
+
+      console.log('📦 Container inventory after deducting already-linked orders:', {
+        sample: Object.keys(containerInventory).slice(0, 2).map(cId => {
+          const products = Object.entries(containerInventory[cId])
+            .filter(([_, data]: [string, any]) => data.quantity > 0)
+            .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
+          return { containerId: cId, products }
+        }),
+      })
+    }
+
     // For reallocation, we'll process unlinked first, then try to move linked orders to earlier containers
     const orders = [...unlinkedOrders, ...linkedOrders]
 
-    if (ordersError) {
-      console.error('Error fetching orders:', ordersError)
-      throw ordersError
+    if (!orders || orders.length === 0) {
+      console.log('ℹ️ No orders found')
+      return NextResponse.json({
+        success: true,
+        allocated: 0,
+        message: 'No orders to allocate',
+      })
     }
 
-    if (!orders || orders.length === 0) {
+    if (unlinkedOrders.length === 0) {
       console.log('ℹ️ No unlinked orders found')
       return NextResponse.json({
         success: true,
@@ -121,7 +173,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    console.log(`📋 Found ${orders.length} unlinked orders to allocate`)
+    console.log(`📋 Processing ${unlinkedOrders.length} unlinked orders for allocation`)
 
     // 5. Get all order items for these orders
     const orderIds = orders.map((o: any) => o.id)
@@ -191,9 +243,17 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Find the FIRST container (in sequential order) that has enough stock for ALL products
-      // This ensures orders are allocated to containers 1 → 2 → 3 → 4... in sequence
+      // Find the BEST container (in sequential order) that has enough stock for ALL products
+      // For unlinked orders: first container with space
+      // For linked orders: first container with EARLIER ETA that has space
       let allocatedContainer: string | null = null
+      const currentContainerId = order.container_id
+      let currentContainerEta = Infinity
+
+      if (currentContainerId) {
+        const currentContainer = containerMap.get(currentContainerId)
+        currentContainerEta = currentContainer?.eta ? new Date(currentContainer.eta).getTime() : Infinity
+      }
 
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
@@ -210,25 +270,56 @@ export async function POST(request: NextRequest) {
         }
 
         if (canFulfill) {
-          // This container can fulfill the order - allocate it (first match in sequence)
-          allocatedContainer = containerId
+          const newContainer = containerMap.get(containerId)
+          const newEta = newContainer?.eta ? new Date(newContainer.eta).getTime() : Infinity
 
-          // Deduct quantities from inventory
-          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-            containerInventory[containerId][productName].quantity -= requiredQty
+          // For already-linked orders: only reallocate if this container is EARLIER (by ETA) than current
+          if (currentContainerId) {
+            // If this is the same container, already optimal - keep it
+            if (containerId === currentContainerId) {
+              allocatedContainer = containerId
+              break // No need to look further
+            }
+            
+            // If new container is later (or same), don't move the order - keep looking for earlier
+            if (newEta >= currentContainerEta) {
+              continue // Keep looking for an earlier container
+            }
+            
+            // newEta < currentContainerEta: This is an earlier container, use it
           }
 
-          break // Stop looking - we found the first container in sequence that can fulfill
+          // This container can fulfill the order - allocate it
+          allocatedContainer = containerId
+
+          // Only deduct quantities if this is a NEW allocation (not already in this container)
+          // Already-linked orders were already deducted in step 4
+          if (!currentContainerId || containerId !== currentContainerId) {
+            // Deduct quantities from inventory
+            for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+              if (containerInventory[containerId][productName]) {
+                containerInventory[containerId][productName].quantity -= requiredQty
+              }
+            }
+          }
+
+          // Stop looking - we found a container that can fulfill
+          // For unlinked: first container with space (by ETA order)
+          // For linked: first container with space that is earlier than current (containers sorted by ETA, so this is earliest)
+          break
         }
       }
 
       if (allocatedContainer) {
-        const container = containerMap.get(allocatedContainer)
-        allocations.push({
-          orderId: order.id,
-          containerId: allocatedContainer,
-          eta: container?.eta || null,
-        })
+        // Only allocate if it's different from current container (or unlinked)
+        if (!currentContainerId || allocatedContainer !== currentContainerId) {
+          const container = containerMap.get(allocatedContainer)
+          allocations.push({
+            orderId: order.id,
+            containerId: allocatedContainer,
+            eta: container?.eta || null,
+          })
+        }
       } else {
         // Log why this order was skipped
         const productsNeeded = Object.keys(requiredProducts).join(', ')
