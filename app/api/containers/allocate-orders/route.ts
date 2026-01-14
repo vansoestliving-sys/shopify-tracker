@@ -352,10 +352,22 @@ export async function POST(request: NextRequest) {
       let allocatedContainer: string | null = null
       const currentContainerId = order.container_id
       let currentContainerEta = Infinity
+      let currentContainerCanFulfill = false
 
       if (currentContainerId) {
         const currentContainer = containerMap.get(currentContainerId)
         currentContainerEta = currentContainer?.eta ? new Date(currentContainer.eta).getTime() : Infinity
+        
+        // Check if current container can actually fulfill this order
+        const currentInventory = containerInventory[currentContainerId]
+        currentContainerCanFulfill = true
+        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+          const available = currentInventory[productName]?.quantity || 0
+          if (available < requiredQty) {
+            currentContainerCanFulfill = false
+            break
+          }
+        }
       }
 
       // Find the EARLIEST container (by ETA) that has enough stock for ALL products
@@ -385,20 +397,26 @@ export async function POST(request: NextRequest) {
 
         if (canFulfill) {
           // This container can fulfill the order
-          // For already-linked orders: only move if this container is EARLIER than current
+          // For already-linked orders:
+          //   - If current container is FULL: move to ANY container with space (prefer earliest)
+          //   - If current container has space: only move to EARLIER container
           // For unlinked orders: always allocate to first available (earliest)
           if (currentContainerId) {
-            // Already linked - only move to EARLIER container (to maintain chronological order)
-            if (newEta < currentContainerEta) {
-              // This is an earlier container - move to it
-              allocatedContainer = containerId
-              break
-            } else if (containerId === currentContainerId) {
+            if (containerId === currentContainerId) {
               // Same container - keep it if it has space
               allocatedContainer = containerId
               break
+            } else if (!currentContainerCanFulfill) {
+              // Current container is FULL - move to ANY container with space (prefer earliest)
+              // Since we're iterating earliest-first, first match is best
+              allocatedContainer = containerId
+              break
+            } else if (newEta < currentContainerEta) {
+              // Current container has space, but this is EARLIER - move to it
+              allocatedContainer = containerId
+              break
             } else {
-              // This container is later - skip it, keep looking for earlier
+              // Current container has space and this is later - skip it
               continue
             }
           } else {
