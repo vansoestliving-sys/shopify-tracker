@@ -117,13 +117,20 @@ export default function ContainerInventoryPage() {
       
       let orderItems: any[] = []
       if (orderIds.length > 0) {
-        const { data: items, error: itemsError } = await supabase
-          .from('order_items')
-          .select('order_id, product_id, quantity, name')
-          .in('order_id', orderIds)
+        // Batch queries if too many orders (Supabase IN clause limit is ~1000, but we'll use 500 for safety)
+        const batchSize = 500
+        for (let i = 0; i < orderIds.length; i += batchSize) {
+          const batch = orderIds.slice(i, i + batchSize)
+          const { data: items, error: itemsError } = await supabase
+            .from('order_items')
+            .select('order_id, product_id, quantity, name')
+            .in('order_id', batch)
 
-        if (itemsError) throw itemsError
-        orderItems = items || []
+          if (itemsError) throw itemsError
+          if (items) {
+            orderItems = [...orderItems, ...items]
+          }
+        }
       }
 
       // Build inventory with allocated quantities
@@ -182,7 +189,13 @@ export default function ContainerInventoryPage() {
       setInventory(inventoryData)
     } catch (error: any) {
       console.error('Error fetching inventory:', error)
-      toast.error('Fout bij ophalen voorraad')
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint,
+      })
+      toast.error(`Fout bij ophalen voorraad: ${error.message || 'Onbekende fout'}`)
     } finally {
       setLoading(false)
     }
