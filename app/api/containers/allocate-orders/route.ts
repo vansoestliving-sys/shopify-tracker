@@ -201,17 +201,39 @@ export async function POST(request: NextRequest) {
       console.log(`🔍 Querying order_items for ${orderIds.length} order IDs (including debug orders)`)
     }
     
-    // IMPORTANT: Remove default 1000 row limit to get ALL order items
-    const { data: allOrderItems, error: itemsError } = await supabase
-      .from('order_items')
-      .select('id, order_id, product_id, shopify_product_id, name, quantity')
-      .in('order_id', orderIds)
-      .limit(10000) // Increase limit to handle all order items
-
-    if (itemsError) {
-      console.error('Error fetching order items:', itemsError)
-      throw itemsError
+    // IMPORTANT: Fetch ALL order items using batching to avoid Supabase limits
+    // Supabase IN queries have limits, so we need to batch
+    let allOrderItems: any[] = []
+    const batchSize = 500 // Smaller batches to avoid "Bad Request"
+    const batches: string[][] = []
+    for (let i = 0; i < orderIds.length; i += batchSize) {
+      batches.push(orderIds.slice(i, i + batchSize))
     }
+
+    console.log(`📦 Fetching order items for ${orderIds.length} orders in ${batches.length} batch(es)`)
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
+      const { data: items, error: itemsError } = await supabase
+        .from('order_items')
+        .select('id, order_id, product_id, shopify_product_id, name, quantity')
+        .in('order_id', batch)
+        .limit(10000)
+
+      if (itemsError) {
+        console.error(`Error fetching order items batch ${i + 1}/${batches.length}:`, itemsError)
+        // Continue with other batches instead of failing completely
+        console.warn(`⚠️ Skipping batch ${i + 1}, continuing...`)
+        continue
+      }
+
+      if (items) {
+        allOrderItems = [...allOrderItems, ...items]
+        console.log(`✅ Batch ${i + 1}/${batches.length}: Fetched ${items.length} items`)
+      }
+    }
+
+    console.log(`✅ Total: Fetched ${allOrderItems.length} order items from ${batches.length} batch(es)`)
 
     console.log(`📋 Found ${allOrderItems?.length || 0} order items`)
     

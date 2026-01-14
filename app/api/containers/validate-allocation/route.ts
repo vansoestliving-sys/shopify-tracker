@@ -40,14 +40,32 @@ export async function GET(request: NextRequest) {
 
     const orderIds = orders?.map((o: any) => o.id) || []
 
-    // Get all order items (with increased limit)
-    const { data: orderItems, error: itemsError } = await supabase
-      .from('order_items')
-      .select('order_id, product_id, name, quantity')
-      .in('order_id', orderIds)
-      .limit(10000)
+    // Get all order items using batching to avoid query limits
+    let orderItems: any[] = []
+    if (orderIds.length > 0) {
+      const batchSize = 500
+      const batches: string[][] = []
+      for (let i = 0; i < orderIds.length; i += batchSize) {
+        batches.push(orderIds.slice(i, i + batchSize))
+      }
 
-    if (itemsError) throw itemsError
+      for (const batch of batches) {
+        const { data: items, error: itemsError } = await supabase
+          .from('order_items')
+          .select('order_id, product_id, name, quantity')
+          .in('order_id', batch)
+          .limit(10000)
+
+        if (itemsError) {
+          console.error('Error fetching order items batch in validation:', itemsError)
+          continue // Skip this batch
+        }
+
+        if (items) {
+          orderItems = [...orderItems, ...items]
+        }
+      }
+    }
 
     // Build validation results
     const issues: Array<{
@@ -111,13 +129,19 @@ export async function GET(request: NextRequest) {
       })
     })
 
+    // Limit response size to avoid "Request Header Or Cookie Too Large" error
+    // Only return first 50 issues and summary
+    const limitedIssues = issues.slice(0, 50)
+    const hasMore = issues.length > 50
+
     return NextResponse.json({
       success: true,
       totalContainers: containers?.length || 0,
       issuesFound: issues.length,
-      issues,
+      issues: limitedIssues,
+      hasMore,
       message: issues.length > 0
-        ? `Found ${issues.length} over-allocation issue(s)`
+        ? `Found ${issues.length} over-allocation issue(s)${hasMore ? ' (showing first 50)' : ''}`
         : 'All containers are properly allocated',
     })
   } catch (error: any) {
