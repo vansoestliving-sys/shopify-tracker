@@ -110,10 +110,12 @@ export async function POST(request: NextRequest) {
     // This ensures we don't allocate to containers that are already full
     if (linkedOrders.length > 0) {
       const linkedOrderIds = linkedOrders.map((o: any) => o.id)
+      // IMPORTANT: Remove default 1000 row limit to get ALL linked order items
       const { data: linkedOrderItems, error: linkedItemsError } = await supabase
         .from('order_items')
         .select('id, order_id, name, quantity')
         .in('order_id', linkedOrderIds)
+        .limit(10000) // Increase limit to handle all order items
 
       if (linkedItemsError) {
         console.error('Error fetching linked order items:', linkedItemsError)
@@ -199,10 +201,12 @@ export async function POST(request: NextRequest) {
       console.log(`🔍 Querying order_items for ${orderIds.length} order IDs (including debug orders)`)
     }
     
+    // IMPORTANT: Remove default 1000 row limit to get ALL order items
     const { data: allOrderItems, error: itemsError } = await supabase
       .from('order_items')
       .select('id, order_id, product_id, shopify_product_id, name, quantity')
       .in('order_id', orderIds)
+      .limit(10000) // Increase limit to handle all order items
 
     if (itemsError) {
       console.error('Error fetching order items:', itemsError)
