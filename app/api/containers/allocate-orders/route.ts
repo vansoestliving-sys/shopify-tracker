@@ -186,6 +186,19 @@ export async function POST(request: NextRequest) {
 
     // 5. Get all order items for these orders
     const orderIds = orders.map((o: any) => o.id)
+    
+    // Debug: Log order IDs for orders 1809-1812
+    const debugOrderNumbers = ['1809', '1810', '1811', '1812']
+    const debugOrders = orders.filter((o: any) => debugOrderNumbers.includes(o.shopify_order_number?.toString() || ''))
+    if (debugOrders.length > 0) {
+      console.log(`🔍 Debug orders 1809-1812:`, debugOrders.map((o: any) => ({
+        orderNumber: o.shopify_order_number,
+        orderId: o.id,
+        containerId: o.container_id,
+      })))
+      console.log(`🔍 Querying order_items for ${orderIds.length} order IDs (including debug orders)`)
+    }
+    
     const { data: allOrderItems, error: itemsError } = await supabase
       .from('order_items')
       .select('id, order_id, product_id, shopify_product_id, name, quantity')
@@ -197,6 +210,16 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`📋 Found ${allOrderItems?.length || 0} order items`)
+    
+    // Debug: Check what order_ids we actually got back
+    if (debugOrders.length > 0) {
+      const uniqueOrderIds = [...new Set(allOrderItems?.map((item: any) => item.order_id) || [])]
+      console.log(`🔍 Unique order_ids in fetched items: ${uniqueOrderIds.length} (sample: ${uniqueOrderIds.slice(0, 5).join(', ')})`)
+      debugOrders.forEach((order: any) => {
+        const hasItems = uniqueOrderIds.includes(order.id)
+        console.log(`🔍 Order #${order.shopify_order_number} (ID: ${order.id}): ${hasItems ? 'HAS items' : 'NO items in query results'}`)
+      })
+    }
 
     // Group items by order_id
     const orderItemsMap: Record<string, any[]> = {}
@@ -205,6 +228,22 @@ export async function POST(request: NextRequest) {
         orderItemsMap[item.order_id] = []
       }
       orderItemsMap[item.order_id].push(item)
+    })
+
+    // Debug: Check if orders 1809-1812 have items
+    const debugOrderNumbers = ['1809', '1810', '1811', '1812']
+    const debugOrders = orders.filter((o: any) => debugOrderNumbers.includes(o.shopify_order_number?.toString() || ''))
+    debugOrders.forEach((order: any) => {
+      const items = orderItemsMap[order.id] || []
+      console.log(`🔍 Order #${order.shopify_order_number} (ID: ${order.id}) has ${items.length} items in orderItemsMap`)
+      if (items.length === 0) {
+        // Check if items exist with this order_id
+        const itemsForThisOrder = allOrderItems?.filter((item: any) => item.order_id === order.id) || []
+        console.log(`⚠️ Order #${order.shopify_order_number}: Found ${itemsForThisOrder.length} items with matching order_id in allOrderItems`)
+        if (itemsForThisOrder.length > 0) {
+          console.log(`   Items:`, itemsForThisOrder.map((i: any) => ({ name: i.name, qty: i.quantity })))
+        }
+      }
     })
 
     // 6. Allocate orders to containers based on available quantities
