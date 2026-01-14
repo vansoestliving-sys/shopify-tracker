@@ -102,8 +102,14 @@ export default function ContainerInventoryPage() {
             shopify_product_id
           )
         `)
+        .limit(10000) // Increase limit
 
-      if (cpError) throw cpError
+      if (cpError) {
+        console.error('Error fetching container products:', cpError)
+        throw cpError
+      }
+
+      console.log(`📦 Fetched ${containerProducts?.length || 0} container products`)
 
       // Get all linked orders with their items
       const { data: orders, error: ordersError } = await supabase
@@ -117,15 +123,35 @@ export default function ContainerInventoryPage() {
       
       let orderItems: any[] = []
       if (orderIds.length > 0) {
-        // IMPORTANT: Remove default 1000 row limit to get ALL order items
-        const { data: items, error: itemsError } = await supabase
-          .from('order_items')
-          .select('order_id, product_id, quantity, name')
-          .in('order_id', orderIds)
-          .limit(10000) // Increase limit to handle all order items
+        // Supabase has limits on IN queries (typically 1000 items)
+        // Split into batches if needed
+        const batchSize = 1000
+        const batches: string[][] = []
+        for (let i = 0; i < orderIds.length; i += batchSize) {
+          batches.push(orderIds.slice(i, i + batchSize))
+        }
 
-        if (itemsError) throw itemsError
-        orderItems = items || []
+        console.log(`📦 Fetching order items for ${orderIds.length} orders in ${batches.length} batch(es)`)
+
+        // Fetch items in batches
+        for (const batch of batches) {
+          const { data: items, error: itemsError } = await supabase
+            .from('order_items')
+            .select('order_id, product_id, quantity, name')
+            .in('order_id', batch)
+            .limit(10000) // Increase limit to handle all order items
+
+          if (itemsError) {
+            console.error('Error fetching order items batch:', itemsError)
+            throw itemsError
+          }
+          
+          if (items) {
+            orderItems = [...orderItems, ...items]
+          }
+        }
+
+        console.log(`✅ Fetched ${orderItems.length} order items total`)
       }
 
       // Build inventory with allocated quantities
@@ -184,7 +210,13 @@ export default function ContainerInventoryPage() {
       setInventory(inventoryData)
     } catch (error: any) {
       console.error('Error fetching inventory:', error)
-      toast.error('Fout bij ophalen voorraad')
+      console.error('Error details:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+      })
+      toast.error(`Fout bij ophalen voorraad: ${error.message || 'Onbekende fout'}`)
     } finally {
       setLoading(false)
     }
