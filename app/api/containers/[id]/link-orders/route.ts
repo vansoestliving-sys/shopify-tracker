@@ -159,6 +159,7 @@ export async function POST(
       .from('order_items')
       .select('order_id, shopify_product_id, name')
       .in('order_id', uniqueOrderIds)
+      .limit(10000) // Increase limit to handle all order items
     
     if (allItemsError) throw allItemsError
 

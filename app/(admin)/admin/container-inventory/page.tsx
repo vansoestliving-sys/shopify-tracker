@@ -117,10 +117,12 @@ export default function ContainerInventoryPage() {
       
       let orderItems: any[] = []
       if (orderIds.length > 0) {
+        // IMPORTANT: Remove default 1000 row limit to get ALL order items
         const { data: items, error: itemsError } = await supabase
           .from('order_items')
           .select('order_id, product_id, quantity, name')
           .in('order_id', orderIds)
+          .limit(10000) // Increase limit to handle all order items
 
         if (itemsError) throw itemsError
         orderItems = items || []

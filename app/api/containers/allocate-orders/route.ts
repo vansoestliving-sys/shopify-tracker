@@ -414,10 +414,33 @@ export async function POST(request: NextRequest) {
               }
             }
             
-            // Deduct quantities from new container
+            // SAFETY CHECK: Validate we're not over-allocating before deducting
+            let canAllocate = true
+            for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+              const available = containerInventory[containerId][productName]?.quantity || 0
+              if (available < requiredQty) {
+                canAllocate = false
+                console.warn(`⚠️ SAFETY CHECK FAILED: Order #${orderNum} needs ${requiredQty}x ${productName} but only ${available} available in ${container?.container_id}`)
+                break
+              }
+            }
+            
+            if (!canAllocate) {
+              // Skip this allocation - container doesn't have enough stock
+              allocatedContainer = null
+              break
+            }
+            
+            // Deduct quantities from new container (safe to do now)
             for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
               if (containerInventory[containerId][productName]) {
                 containerInventory[containerId][productName].quantity -= requiredQty
+                // Double-check we didn't go negative
+                if (containerInventory[containerId][productName].quantity < 0) {
+                  console.error(`❌ OVER-ALLOCATION DETECTED: ${container?.container_id} has negative quantity for ${productName}: ${containerInventory[containerId][productName].quantity}`)
+                  // Fix it by setting to 0
+                  containerInventory[containerId][productName].quantity = 0
+                }
               }
             }
           }
