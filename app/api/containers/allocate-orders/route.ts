@@ -245,14 +245,29 @@ export async function POST(request: NextRequest) {
 
       // Find the BEST container (in sequential order) that has enough stock for ALL products
       // For unlinked orders: first container with space
-      // For linked orders: first container with EARLIER ETA that has space
+      // For linked orders: 
+      //   - If current container is full: move to first container with space (any container)
+      //   - If current container has space: only move to earlier container with space
       let allocatedContainer: string | null = null
       const currentContainerId = order.container_id
       let currentContainerEta = Infinity
+      let currentContainerHasSpace = false
 
       if (currentContainerId) {
         const currentContainer = containerMap.get(currentContainerId)
         currentContainerEta = currentContainer?.eta ? new Date(currentContainer.eta).getTime() : Infinity
+        
+        // Check if current container actually has space for this order
+        const currentInventory = containerInventory[currentContainerId]
+        let canFulfillCurrent = true
+        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+          const available = currentInventory[productName]?.quantity || 0
+          if (available < requiredQty) {
+            canFulfillCurrent = false
+            break
+          }
+        }
+        currentContainerHasSpace = canFulfillCurrent
       }
 
       for (const containerId of orderedContainerIds) {
@@ -273,39 +288,61 @@ export async function POST(request: NextRequest) {
           const newContainer = containerMap.get(containerId)
           const newEta = newContainer?.eta ? new Date(newContainer.eta).getTime() : Infinity
 
-          // For already-linked orders: only reallocate if this container is EARLIER (by ETA) than current
+          // For already-linked orders: decide whether to reallocate
           if (currentContainerId) {
-            // If this is the same container, already optimal - keep it
+            // If this is the same container
             if (containerId === currentContainerId) {
-              allocatedContainer = containerId
-              break // No need to look further
+              // If it has space, keep it. If it's full, we need to move it (but we're checking the same container, so skip)
+              if (currentContainerHasSpace) {
+                allocatedContainer = containerId
+                break // Already in best container with space
+              } else {
+                continue // Current container is full, keep looking for another
+              }
             }
             
-            // If new container is later (or same), don't move the order - keep looking for earlier
-            if (newEta >= currentContainerEta) {
-              continue // Keep looking for an earlier container
+            // Different container - decide if we should move
+            if (currentContainerHasSpace) {
+              // Current container has space - only move to EARLIER container
+              if (newEta >= currentContainerEta) {
+                continue // Keep looking for an earlier container
+              }
+              // newEta < currentContainerEta: This is an earlier container, move to it
+            } else {
+              // Current container is FULL - move to ANY container with space (prefer earlier)
+              // Since containers are sorted by ETA, first match is best
             }
-            
-            // newEta < currentContainerEta: This is an earlier container, use it
           }
 
           // This container can fulfill the order - allocate it
           allocatedContainer = containerId
 
-          // Only deduct quantities if this is a NEW allocation (not already in this container)
-          // Already-linked orders were already deducted in step 4
+          // Handle quantity adjustments
           if (!currentContainerId || containerId !== currentContainerId) {
-            // Deduct quantities from inventory
+            // Moving to a different container (or new allocation)
+            
+            // Add quantities back to old container (if moving from one to another)
+            if (currentContainerId && containerInventory[currentContainerId]) {
+              for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+                if (containerInventory[currentContainerId][productName]) {
+                  containerInventory[currentContainerId][productName].quantity += requiredQty
+                }
+              }
+            }
+            
+            // Deduct quantities from new container
             for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
               if (containerInventory[containerId][productName]) {
                 containerInventory[containerId][productName].quantity -= requiredQty
               }
             }
           }
+          // If staying in same container, no quantity changes needed (already deducted in step 4)
 
           // Stop looking - we found a container that can fulfill
           // For unlinked: first container with space (by ETA order)
-          // For linked: first container with space that is earlier than current (containers sorted by ETA, so this is earliest)
+          // For linked in full container: first container with space (any)
+          // For linked in container with space: first EARLIER container with space
           break
         }
       }

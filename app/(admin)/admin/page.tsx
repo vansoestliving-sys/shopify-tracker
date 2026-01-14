@@ -318,7 +318,7 @@ export default function AdminDashboard() {
   }
 
   const handleSmartAllocateOrders = async () => {
-    if (!confirm('Dit zal alle ongekoppelde bestellingen chronologisch toewijzen op basis van containervoorraden. Doorgaan?')) {
+    if (!confirm('Dit zal alle bestellingen opnieuw toewijzen: ongekoppelde bestellingen krijgen een container, en bestellingen in volle containers worden verplaatst naar containers met ruimte. Doorgaan?')) {
       return
     }
 
