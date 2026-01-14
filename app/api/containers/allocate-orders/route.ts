@@ -234,10 +234,9 @@ export async function POST(request: NextRequest) {
       orderItemsMap[item.order_id].push(item)
     })
 
-    // Debug: Check if orders 1809-1812 have items
-    const debugOrderNumbers = ['1809', '1810', '1811', '1812']
-    const debugOrders = orders.filter((o: any) => debugOrderNumbers.includes(o.shopify_order_number?.toString() || ''))
-    debugOrders.forEach((order: any) => {
+    // Debug: Check if orders 1809-1812 have items (reuse debugOrders from above)
+    if (debugOrders.length > 0) {
+      debugOrders.forEach((order: any) => {
       const items = orderItemsMap[order.id] || []
       console.log(`🔍 Order #${order.shopify_order_number} (ID: ${order.id}) has ${items.length} items in orderItemsMap`)
       if (items.length === 0) {
@@ -248,7 +247,8 @@ export async function POST(request: NextRequest) {
           console.log(`   Items:`, itemsForThisOrder.map((i: any) => ({ name: i.name, qty: i.quantity })))
         }
       }
-    })
+      })
+    }
 
     // 6. Allocate orders to containers based on available quantities
     const allocations: { 
