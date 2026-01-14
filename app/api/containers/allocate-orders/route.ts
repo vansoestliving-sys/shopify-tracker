@@ -171,8 +171,14 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // For reallocation, we'll process unlinked first, then try to move linked orders from full containers
-    const orders = [...unlinkedOrders, ...linkedOrders]
+    // CRITICAL: Sort ALL orders by created_at (oldest first) to ensure chronological allocation
+    // This ensures oldest orders go to earliest containers, newest orders to later containers
+    const allOrdersCombined = [...unlinkedOrders, ...linkedOrders]
+    const orders = allOrdersCombined.sort((a: any, b: any) => {
+      const aDate = a.created_at ? new Date(a.created_at).getTime() : 0
+      const bDate = b.created_at ? new Date(b.created_at).getTime() : 0
+      return aDate - bDate // Ascending: oldest first
+    })
 
     if (!orders || orders.length === 0) {
       console.log('ℹ️ No orders found')
@@ -184,7 +190,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Don't return early if no unlinked orders - we still need to reallocate linked orders from full containers
-    console.log(`📋 Processing ${unlinkedOrders.length} unlinked orders + ${linkedOrders.length} linked orders for reallocation`)
+    console.log(`📋 Processing ${unlinkedOrders.length} unlinked orders + ${linkedOrders.length} linked orders for reallocation (sorted chronologically - oldest first)`)
 
     // 5. Get all order items for these orders
     const orderIds = orders.map((o: any) => o.id)
@@ -340,37 +346,24 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Find the BEST container (in sequential order) that has enough stock for ALL products
-      // For unlinked orders: first container with space
-      // For linked orders: 
-      //   - If current container is full: move to first container with space (any container)
-      //   - If current container has space: only move to earlier container with space
+      // CRITICAL: Always find the EARLIEST container with space (chronological allocation)
+      // Since orders are sorted oldest-first, oldest orders should go to earliest containers
+      // This ensures proper chronological order: oldest → earliest containers, newest → later containers
       let allocatedContainer: string | null = null
       const currentContainerId = order.container_id
       let currentContainerEta = Infinity
-      let currentContainerHasSpace = false
 
       if (currentContainerId) {
         const currentContainer = containerMap.get(currentContainerId)
         currentContainerEta = currentContainer?.eta ? new Date(currentContainer.eta).getTime() : Infinity
-        
-        // Check if current container actually has space for this order
-        const currentInventory = containerInventory[currentContainerId]
-        let canFulfillCurrent = true
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          const available = currentInventory[productName]?.quantity || 0
-          if (available < requiredQty) {
-            canFulfillCurrent = false
-            break
-          }
-        }
-        currentContainerHasSpace = canFulfillCurrent
       }
 
+      // Find the EARLIEST container (by ETA) that has enough stock for ALL products
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
         let canFulfill = true
         const container = containerMap.get(containerId)
+        const newEta = container?.eta ? new Date(container.eta).getTime() : Infinity
 
         // Check if this container has enough of ALL products (excluding turn function)
         for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
@@ -391,89 +384,78 @@ export async function POST(request: NextRequest) {
         }
 
         if (canFulfill) {
-          const newContainer = containerMap.get(containerId)
-          const newEta = newContainer?.eta ? new Date(newContainer.eta).getTime() : Infinity
-
-          // For already-linked orders: decide whether to reallocate
+          // This container can fulfill the order
+          // For already-linked orders: only move if this container is EARLIER than current
+          // For unlinked orders: always allocate to first available (earliest)
           if (currentContainerId) {
-            // If this is the same container
-            if (containerId === currentContainerId) {
-              // If it has space, keep it. If it's full, we need to move it (but we're checking the same container, so skip)
-              if (currentContainerHasSpace) {
-                allocatedContainer = containerId
-                break // Already in best container with space
-              } else {
-                continue // Current container is full, keep looking for another
-              }
-            }
-            
-            // Different container - decide if we should move
-            if (currentContainerHasSpace) {
-              // Current container has space - only move to EARLIER container
-              if (newEta >= currentContainerEta) {
-                continue // Keep looking for an earlier container
-              }
-              // newEta < currentContainerEta: This is an earlier container, move to it
+            // Already linked - only move to EARLIER container (to maintain chronological order)
+            if (newEta < currentContainerEta) {
+              // This is an earlier container - move to it
+              allocatedContainer = containerId
+              break
+            } else if (containerId === currentContainerId) {
+              // Same container - keep it if it has space
+              allocatedContainer = containerId
+              break
             } else {
-              // Current container is FULL - move to ANY container with space (prefer earlier)
-              // Since containers are sorted by ETA, first match is best
+              // This container is later - skip it, keep looking for earlier
+              continue
+            }
+          } else {
+            // Unlinked order - allocate to first available (earliest) container
+            allocatedContainer = containerId
+            break
+          }
+        }
+      }
+
+      // If we found a container, proceed with allocation
+      if (allocatedContainer) {
+        const newContainer = containerMap.get(allocatedContainer)
+        
+        // Handle quantity adjustments
+        if (!currentContainerId || allocatedContainer !== currentContainerId) {
+          // Moving to a different container (or new allocation)
+          
+          // Add quantities back to old container (if moving from one to another)
+          if (currentContainerId && containerInventory[currentContainerId]) {
+            for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+              if (containerInventory[currentContainerId][productName]) {
+                containerInventory[currentContainerId][productName].quantity += requiredQty
+              }
             }
           }
-
-          // This container can fulfill the order - allocate it
-          allocatedContainer = containerId
-
-          // Handle quantity adjustments
-          if (!currentContainerId || containerId !== currentContainerId) {
-            // Moving to a different container (or new allocation)
-            
-            // Add quantities back to old container (if moving from one to another)
-            if (currentContainerId && containerInventory[currentContainerId]) {
-              for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-                if (containerInventory[currentContainerId][productName]) {
-                  containerInventory[currentContainerId][productName].quantity += requiredQty
-                }
-              }
-            }
-            
-            // SAFETY CHECK: Validate we're not over-allocating before deducting
-            let canAllocate = true
-            for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-              const available = containerInventory[containerId][productName]?.quantity || 0
-              if (available < requiredQty) {
-                canAllocate = false
-                console.warn(`⚠️ SAFETY CHECK FAILED: Order #${orderNum} needs ${requiredQty}x ${productName} but only ${available} available in ${container?.container_id}`)
-                break
-              }
-            }
-            
-            if (!canAllocate) {
-              // Skip this allocation - container doesn't have enough stock
-              allocatedContainer = null
+          
+          // SAFETY CHECK: Validate we're not over-allocating before deducting
+          let canAllocate = true
+          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+            const available = containerInventory[allocatedContainer][productName]?.quantity || 0
+            if (available < requiredQty) {
+              canAllocate = false
+              console.warn(`⚠️ SAFETY CHECK FAILED: Order #${orderNum} needs ${requiredQty}x ${productName} but only ${available} available in ${newContainer?.container_id}`)
               break
             }
-            
+          }
+          
+          if (!canAllocate) {
+            // Skip this allocation - container doesn't have enough stock
+            allocatedContainer = null
+          } else {
             // Deduct quantities from new container (safe to do now)
             for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-              if (containerInventory[containerId][productName]) {
-                containerInventory[containerId][productName].quantity -= requiredQty
+              if (containerInventory[allocatedContainer][productName]) {
+                containerInventory[allocatedContainer][productName].quantity -= requiredQty
                 // Double-check we didn't go negative
-                if (containerInventory[containerId][productName].quantity < 0) {
-                  console.error(`❌ OVER-ALLOCATION DETECTED: ${container?.container_id} has negative quantity for ${productName}: ${containerInventory[containerId][productName].quantity}`)
+                if (containerInventory[allocatedContainer][productName].quantity < 0) {
+                  console.error(`❌ OVER-ALLOCATION DETECTED: ${newContainer?.container_id} has negative quantity for ${productName}: ${containerInventory[allocatedContainer][productName].quantity}`)
                   // Fix it by setting to 0
-                  containerInventory[containerId][productName].quantity = 0
+                  containerInventory[allocatedContainer][productName].quantity = 0
                 }
               }
             }
           }
-          // If staying in same container, no quantity changes needed (already deducted in step 4)
-
-          // Stop looking - we found a container that can fulfill
-          // For unlinked: first container with space (by ETA order)
-          // For linked in full container: first container with space (any)
-          // For linked in container with space: first EARLIER container with space
-          break
         }
+        // If staying in same container, no quantity changes needed (already deducted in step 4)
       }
 
       if (allocatedContainer) {
