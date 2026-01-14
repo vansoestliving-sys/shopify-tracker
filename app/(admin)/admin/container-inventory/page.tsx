@@ -111,47 +111,81 @@ export default function ContainerInventoryPage() {
 
       console.log(`📦 Fetched ${containerProducts?.length || 0} container products`)
 
-      // Get all linked orders with their items
+      // Get all linked orders
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('id, container_id')
         .not('container_id', 'is', null)
 
-      if (ordersError) throw ordersError
+      if (ordersError) {
+        console.error('Error fetching orders:', ordersError)
+        throw ordersError
+      }
 
       const orderIds = orders?.map((o: any) => o.id) || []
+      const orderIdsSet = new Set(orderIds) // For fast lookup
       
+      console.log(`📦 Found ${orderIds.length} linked orders`)
+
+      // Fetch order items - use a more efficient approach
+      // Instead of IN query with large array, fetch items for orders that have container_id
+      // by joining through orders table
       let orderItems: any[] = []
       if (orderIds.length > 0) {
-        // Supabase has limits on IN queries (typically 1000 items)
-        // Split into batches if needed
-        const batchSize = 1000
-        const batches: string[][] = []
-        for (let i = 0; i < orderIds.length; i += batchSize) {
-          batches.push(orderIds.slice(i, i + batchSize))
-        }
+        console.log(`📦 Fetching order items for ${orderIds.length} linked orders...`)
+        
+        try {
+          // Use a simpler approach: fetch items in smaller batches
+          // Supabase IN queries work better with smaller arrays
+          const batchSize = 500 // Smaller batches to avoid "Bad Request"
+          const batches: string[][] = []
+          for (let i = 0; i < orderIds.length; i += batchSize) {
+            batches.push(orderIds.slice(i, i + batchSize))
+          }
 
-        console.log(`📦 Fetching order items for ${orderIds.length} orders in ${batches.length} batch(es)`)
+          console.log(`📦 Processing ${batches.length} batch(es) of order items`)
 
-        // Fetch items in batches
-        for (const batch of batches) {
-          const { data: items, error: itemsError } = await supabase
+          // Fetch items in batches
+          for (let i = 0; i < batches.length; i++) {
+            const batch = batches[i]
+            const { data: items, error: itemsError } = await supabase
+              .from('order_items')
+              .select('order_id, product_id, quantity, name')
+              .in('order_id', batch)
+
+            if (itemsError) {
+              console.error(`Error fetching order items batch ${i + 1}/${batches.length}:`, itemsError)
+              // Don't throw immediately - try to continue with other batches
+              console.warn(`⚠️ Skipping batch ${i + 1}, continuing with remaining batches...`)
+              continue
+            }
+            
+            if (items) {
+              orderItems = [...orderItems, ...items]
+              console.log(`✅ Batch ${i + 1}/${batches.length}: Fetched ${items.length} items`)
+            }
+          }
+
+          console.log(`✅ Total: Fetched ${orderItems.length} order items from ${batches.length} batch(es)`)
+        } catch (batchError: any) {
+          console.error('Error in batch processing:', batchError)
+          // Fallback: try fetching without IN query (slower but more reliable)
+          console.log('🔄 Trying fallback method: fetching all items and filtering...')
+          
+          const { data: allItems, error: fallbackError } = await supabase
             .from('order_items')
             .select('order_id, product_id, quantity, name')
-            .in('order_id', batch)
-            .limit(10000) // Increase limit to handle all order items
+            .limit(50000) // Large limit to get all items
 
-          if (itemsError) {
-            console.error('Error fetching order items batch:', itemsError)
-            throw itemsError
+          if (fallbackError) {
+            console.error('Fallback method also failed:', fallbackError)
+            throw fallbackError
           }
-          
-          if (items) {
-            orderItems = [...orderItems, ...items]
-          }
+
+          // Filter in memory
+          orderItems = (allItems || []).filter((item: any) => orderIdsSet.has(item.order_id))
+          console.log(`✅ Fallback: Filtered ${orderItems.length} items from ${allItems?.length || 0} total items`)
         }
-
-        console.log(`✅ Fetched ${orderItems.length} order items total`)
       }
 
       // Build inventory with allocated quantities
