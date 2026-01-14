@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // For reallocation, we'll process unlinked first, then try to move linked orders to earlier containers
+    // For reallocation, we'll process unlinked first, then try to move linked orders from full containers
     const orders = [...unlinkedOrders, ...linkedOrders]
 
     if (!orders || orders.length === 0) {
@@ -164,16 +164,8 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    if (unlinkedOrders.length === 0) {
-      console.log('ℹ️ No unlinked orders found')
-      return NextResponse.json({
-        success: true,
-        allocated: 0,
-        message: 'No unlinked orders to allocate',
-      })
-    }
-
-    console.log(`📋 Processing ${unlinkedOrders.length} unlinked orders for allocation`)
+    // Don't return early if no unlinked orders - we still need to reallocate linked orders from full containers
+    console.log(`📋 Processing ${unlinkedOrders.length} unlinked orders + ${linkedOrders.length} linked orders for reallocation`)
 
     // 5. Get all order items for these orders
     const orderIds = orders.map((o: any) => o.id)
@@ -351,11 +343,20 @@ export async function POST(request: NextRequest) {
         // Only allocate if it's different from current container (or unlinked)
         if (!currentContainerId || allocatedContainer !== currentContainerId) {
           const container = containerMap.get(allocatedContainer)
+          const oldContainer = currentContainerId ? containerMap.get(currentContainerId) : null
           allocations.push({
             orderId: order.id,
             containerId: allocatedContainer,
             eta: container?.eta || null,
+            isReallocation: !!currentContainerId,
+            fromContainer: oldContainer?.container_id || null,
+            toContainer: container?.container_id || null,
+            orderNumber: order.shopify_order_number,
           })
+          
+          if (currentContainerId) {
+            console.log(`🔄 Reallocating order #${order.shopify_order_number} from ${oldContainer?.container_id} to ${container?.container_id}`)
+          }
         }
       } else {
         // Log why this order was skipped
@@ -423,16 +424,47 @@ export async function POST(request: NextRequest) {
       }
     })
 
+    // Count new allocations vs reallocations
+    const newAllocations = allocations.filter((a: any) => !a.isReallocation)
+    const reallocations = allocations.filter((a: any) => a.isReallocation)
+
+    console.log('📊 Final results:', {
+      newAllocations: newAllocations.length,
+      reallocations: reallocations.length,
+      skipped: skipped.length,
+      sampleReallocations: reallocations.slice(0, 5).map((r: any) => ({
+        order: r.orderNumber,
+        from: r.fromContainer,
+        to: r.toContainer,
+      })),
+    })
+
+    let message = ''
+    if (newAllocations.length > 0) {
+      message += `${newAllocations.length} nieuwe bestellingen toegewezen. `
+    }
+    if (reallocations.length > 0) {
+      message += `${reallocations.length} bestellingen verplaatst naar containers met ruimte. `
+    }
+    if (skipped.length > 0) {
+      message += `${skipped.length} overgeslagen.`
+    }
+    if (!message) {
+      message = 'Geen wijzigingen nodig - alle bestellingen staan al in de juiste containers.'
+    }
+
     return NextResponse.json({
       success: true,
       allocated: allocations.length,
+      newAllocations: newAllocations.length,
+      reallocations: reallocations.length,
       skipped: skipped.length,
       skippedReasons: {
         no_items: skipped.filter(s => s.reason === 'no_items').length,
         insufficient_stock: skipped.filter(s => s.reason === 'insufficient_stock').length,
       },
       inventoryStatus,
-      message: `Successfully allocated ${allocations.length} orders. ${skipped.length} orders skipped.`,
+      message,
     })
   } catch (error: any) {
     console.error('Error allocating orders:', error)
