@@ -142,12 +142,29 @@ export async function POST(request: NextRequest) {
         }
       })
 
+      // Log inventory for specific containers
+      const containerIdMap = new Map(sortedContainers.map((c: any) => [c.id, c.container_id]))
+      const lx1456_2Id = sortedContainers.find((c: any) => c.container_id === 'LX1456-2')?.id
+      const lx1427Id = sortedContainers.find((c: any) => c.container_id === 'LX1427')?.id
+      
+      if (lx1456_2Id && containerInventory[lx1456_2Id]) {
+        const products = Object.entries(containerInventory[lx1456_2Id])
+          .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
+        console.log('📦 LX1456-2 inventory after deduction:', products)
+      }
+      
+      if (lx1427Id && containerInventory[lx1427Id]) {
+        const products = Object.entries(containerInventory[lx1427Id])
+          .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
+        console.log('📦 LX1427 inventory after deduction:', products)
+      }
+      
       console.log('📦 Container inventory after deducting already-linked orders:', {
         sample: Object.keys(containerInventory).slice(0, 2).map(cId => {
           const products = Object.entries(containerInventory[cId])
             .filter(([_, data]: [string, any]) => data.quantity > 0)
             .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
-          return { containerId: cId, products }
+          return { containerId: containerIdMap.get(cId) || cId, products }
         }),
       })
     }
@@ -232,6 +249,12 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Debug logging for specific orders
+      if (order.shopify_order_number && ['1809', '1810', '1811', '1812'].includes(order.shopify_order_number)) {
+        console.log(`📋 Order #${order.shopify_order_number} requires:`, requiredProducts)
+        console.log(`📋 Order #${order.shopify_order_number} items:`, items.map((i: any) => ({ name: i.name, qty: i.quantity })))
+      }
+
       // If order only has turn function (no chairs), skip it
       if (Object.keys(requiredProducts).length === 0) {
         skipped.push({
@@ -273,13 +296,22 @@ export async function POST(request: NextRequest) {
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
         let canFulfill = true
+        const container = containerMap.get(containerId)
 
         // Check if this container has enough of ALL products (excluding turn function)
         for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
           const available = inventory[productName]?.quantity || 0
           
+          // Debug logging for first few orders
+          if (order.shopify_order_number && ['1809', '1810', '1811', '1812'].includes(order.shopify_order_number)) {
+            console.log(`🔍 Order #${order.shopify_order_number} checking ${container?.container_id}: needs ${requiredQty}x "${productName}", available: ${available}`)
+          }
+          
           if (available < requiredQty) {
             canFulfill = false
+            if (order.shopify_order_number && ['1809', '1810', '1811', '1812'].includes(order.shopify_order_number)) {
+              console.log(`❌ ${container?.container_id} cannot fulfill: ${productName} (need ${requiredQty}, have ${available})`)
+            }
             break
           }
         }
