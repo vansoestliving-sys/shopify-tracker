@@ -102,90 +102,28 @@ export default function ContainerInventoryPage() {
             shopify_product_id
           )
         `)
-        .limit(10000) // Increase limit
 
-      if (cpError) {
-        console.error('Error fetching container products:', cpError)
-        throw cpError
-      }
+      if (cpError) throw cpError
 
-      console.log(`📦 Fetched ${containerProducts?.length || 0} container products`)
-
-      // Get all linked orders
+      // Get all linked orders with their items
       const { data: orders, error: ordersError } = await supabase
         .from('orders')
         .select('id, container_id')
         .not('container_id', 'is', null)
 
-      if (ordersError) {
-        console.error('Error fetching orders:', ordersError)
-        throw ordersError
-      }
+      if (ordersError) throw ordersError
 
       const orderIds = orders?.map((o: any) => o.id) || []
-      const orderIdsSet = new Set(orderIds) // For fast lookup
       
-      console.log(`📦 Found ${orderIds.length} linked orders`)
-
-      // Fetch order items - use a more efficient approach
-      // Instead of IN query with large array, fetch items for orders that have container_id
-      // by joining through orders table
       let orderItems: any[] = []
       if (orderIds.length > 0) {
-        console.log(`📦 Fetching order items for ${orderIds.length} linked orders...`)
-        
-        try {
-          // Use a simpler approach: fetch items in smaller batches
-          // Supabase IN queries work better with smaller arrays
-          const batchSize = 500 // Smaller batches to avoid "Bad Request"
-          const batches: string[][] = []
-          for (let i = 0; i < orderIds.length; i += batchSize) {
-            batches.push(orderIds.slice(i, i + batchSize))
-          }
+        const { data: items, error: itemsError } = await supabase
+          .from('order_items')
+          .select('order_id, product_id, quantity, name')
+          .in('order_id', orderIds)
 
-          console.log(`📦 Processing ${batches.length} batch(es) of order items`)
-
-          // Fetch items in batches
-          for (let i = 0; i < batches.length; i++) {
-            const batch = batches[i]
-            const { data: items, error: itemsError } = await supabase
-              .from('order_items')
-              .select('order_id, product_id, quantity, name')
-              .in('order_id', batch)
-
-            if (itemsError) {
-              console.error(`Error fetching order items batch ${i + 1}/${batches.length}:`, itemsError)
-              // Don't throw immediately - try to continue with other batches
-              console.warn(`⚠️ Skipping batch ${i + 1}, continuing with remaining batches...`)
-              continue
-            }
-            
-            if (items) {
-              orderItems = [...orderItems, ...items]
-              console.log(`✅ Batch ${i + 1}/${batches.length}: Fetched ${items.length} items`)
-            }
-          }
-
-          console.log(`✅ Total: Fetched ${orderItems.length} order items from ${batches.length} batch(es)`)
-        } catch (batchError: any) {
-          console.error('Error in batch processing:', batchError)
-          // Fallback: try fetching without IN query (slower but more reliable)
-          console.log('🔄 Trying fallback method: fetching all items and filtering...')
-          
-          const { data: allItems, error: fallbackError } = await supabase
-            .from('order_items')
-            .select('order_id, product_id, quantity, name')
-            .limit(50000) // Large limit to get all items
-
-          if (fallbackError) {
-            console.error('Fallback method also failed:', fallbackError)
-            throw fallbackError
-          }
-
-          // Filter in memory
-          orderItems = (allItems || []).filter((item: any) => orderIdsSet.has(item.order_id))
-          console.log(`✅ Fallback: Filtered ${orderItems.length} items from ${allItems?.length || 0} total items`)
-        }
+        if (itemsError) throw itemsError
+        orderItems = items || []
       }
 
       // Build inventory with allocated quantities
@@ -244,13 +182,7 @@ export default function ContainerInventoryPage() {
       setInventory(inventoryData)
     } catch (error: any) {
       console.error('Error fetching inventory:', error)
-      console.error('Error details:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-      })
-      toast.error(`Fout bij ophalen voorraad: ${error.message || 'Onbekende fout'}`)
+      toast.error('Fout bij ophalen voorraad')
     } finally {
       setLoading(false)
     }

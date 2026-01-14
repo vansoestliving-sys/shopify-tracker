@@ -318,7 +318,7 @@ export default function AdminDashboard() {
   }
 
   const handleSmartAllocateOrders = async () => {
-    if (!confirm('Dit zal alle bestellingen opnieuw toewijzen: ongekoppelde bestellingen krijgen een container, en bestellingen in volle containers worden verplaatst naar containers met ruimte. Doorgaan?')) {
+    if (!confirm('Dit zal alle ongekoppelde bestellingen chronologisch toewijzen op basis van containervoorraden. Doorgaan?')) {
       return
     }
 
@@ -334,21 +334,7 @@ export default function AdminDashboard() {
       const data = await response.json()
 
       if (response.ok && data.success) {
-        // Show detailed results
-        if (data.newAllocations > 0 || data.reallocations > 0) {
-          let successMsg = '✅ '
-          if (data.newAllocations > 0) {
-            successMsg += `${data.newAllocations} nieuwe toegewezen`
-          }
-          if (data.reallocations > 0) {
-            if (data.newAllocations > 0) successMsg += ', '
-            successMsg += `${data.reallocations} verplaatst`
-          }
-          toast.success(successMsg)
-        } else {
-          toast.info('Alle bestellingen staan al in de juiste containers')
-        }
-        
+        toast.success(`✅ ${data.allocated} bestellingen toegewezen!`)
         if (data.skipped > 0) {
           toast.info(`ℹ️ ${data.skipped} bestellingen overgeslagen (geen voorraad)`)
         }

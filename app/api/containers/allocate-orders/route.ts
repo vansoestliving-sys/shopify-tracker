@@ -104,158 +104,38 @@ export async function POST(request: NextRequest) {
     const unlinkedOrders = (allOrders || []).filter((o: any) => !o.container_id)
     const linkedOrders = (allOrders || []).filter((o: any) => o.container_id)
     
-    console.log(`📋 Found ${unlinkedOrders.length} unlinked orders and ${linkedOrders.length} already-linked orders`)
+    // For reallocation, we'll process unlinked first, then try to move linked orders to earlier containers
+    const orders = [...unlinkedOrders, ...linkedOrders]
 
-    // IMPORTANT: Deduct already-linked orders from container inventory BEFORE allocating new ones
-    // This ensures we don't allocate to containers that are already full
-    if (linkedOrders.length > 0) {
-      const linkedOrderIds = linkedOrders.map((o: any) => o.id)
-      // IMPORTANT: Remove default 1000 row limit to get ALL linked order items
-      const { data: linkedOrderItems, error: linkedItemsError } = await supabase
-        .from('order_items')
-        .select('id, order_id, name, quantity')
-        .in('order_id', linkedOrderIds)
-        .limit(10000) // Increase limit to handle all order items
-
-      if (linkedItemsError) {
-        console.error('Error fetching linked order items:', linkedItemsError)
-        throw linkedItemsError
-      }
-
-      console.log(`📦 Deducting ${linkedOrderItems?.length || 0} items from already-linked orders`)
-
-      // Deduct quantities from containers that already have orders
-      linkedOrderItems?.forEach((item: any) => {
-        const order = linkedOrders.find((o: any) => o.id === item.order_id)
-        if (!order || !order.container_id) return
-
-        const containerId = order.container_id
-        const productName = item.name?.toLowerCase().trim()
-        
-        if (productName && containerInventory[containerId]?.[productName]) {
-          // Skip turn function - not tracked
-          if (productName.includes('draaifunctie') || productName.includes('turn function')) {
-            return
-          }
-          
-          const itemQty = item.quantity || 1
-          const currentQty = containerInventory[containerId][productName].quantity || 0
-          containerInventory[containerId][productName].quantity = Math.max(0, currentQty - itemQty)
-        }
-      })
-
-      // Log inventory for specific containers
-      const containerIdMap = new Map(sortedContainers.map((c: any) => [c.id, c.container_id]))
-      const lx1456_2Id = sortedContainers.find((c: any) => c.container_id === 'LX1456-2')?.id
-      const lx1427Id = sortedContainers.find((c: any) => c.container_id === 'LX1427')?.id
-      
-      if (lx1456_2Id && containerInventory[lx1456_2Id]) {
-        const products = Object.entries(containerInventory[lx1456_2Id])
-          .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
-        console.log('📦 LX1456-2 inventory after deduction:', products)
-      }
-      
-      if (lx1427Id && containerInventory[lx1427Id]) {
-        const products = Object.entries(containerInventory[lx1427Id])
-          .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
-        console.log('📦 LX1427 inventory after deduction:', products)
-      }
-      
-      console.log('📦 Container inventory after deducting already-linked orders:', {
-        sample: Object.keys(containerInventory).slice(0, 2).map(cId => {
-          const products = Object.entries(containerInventory[cId])
-            .filter(([_, data]: [string, any]) => data.quantity > 0)
-            .map(([name, data]: [string, any]) => `${name}: ${data.quantity}`)
-          return { containerId: containerIdMap.get(cId) || cId, products }
-        }),
-      })
+    if (ordersError) {
+      console.error('Error fetching orders:', ordersError)
+      throw ordersError
     }
 
-    // CRITICAL: Sort ALL orders by created_at (oldest first) to ensure chronological allocation
-    // CHRONOLOGICAL ORDER GUARANTEE:
-    // 1. Orders are processed oldest-first (this sort)
-    // 2. Each order gets the EARLIEST container with space (see allocation logic below)
-    // 3. Result: Oldest orders → earliest containers, newest orders → later containers
-    // This ensures customers who ordered first get earlier delivery dates
-    const allOrdersCombined = [...unlinkedOrders, ...linkedOrders]
-    const orders = allOrdersCombined.sort((a: any, b: any) => {
-      const aDate = a.created_at ? new Date(a.created_at).getTime() : 0
-      const bDate = b.created_at ? new Date(b.created_at).getTime() : 0
-      return aDate - bDate // Ascending: oldest first
-    })
-
     if (!orders || orders.length === 0) {
-      console.log('ℹ️ No orders found')
+      console.log('ℹ️ No unlinked orders found')
       return NextResponse.json({
         success: true,
         allocated: 0,
-        message: 'No orders to allocate',
+        message: 'No unlinked orders to allocate',
       })
     }
 
-    // Don't return early if no unlinked orders - we still need to reallocate linked orders from full containers
-    console.log(`📋 Processing ${unlinkedOrders.length} unlinked orders + ${linkedOrders.length} linked orders for reallocation (sorted chronologically - oldest first)`)
+    console.log(`📋 Found ${orders.length} unlinked orders to allocate`)
 
     // 5. Get all order items for these orders
     const orderIds = orders.map((o: any) => o.id)
-    
-    // Debug: Log order IDs for orders 1809-1812
-    const debugOrderNumbers = ['1809', '1810', '1811', '1812']
-    const debugOrders = orders.filter((o: any) => debugOrderNumbers.includes(o.shopify_order_number?.toString() || ''))
-    if (debugOrders.length > 0) {
-      console.log(`🔍 Debug orders 1809-1812:`, debugOrders.map((o: any) => ({
-        orderNumber: o.shopify_order_number,
-        orderId: o.id,
-        containerId: o.container_id,
-      })))
-      console.log(`🔍 Querying order_items for ${orderIds.length} order IDs (including debug orders)`)
+    const { data: allOrderItems, error: itemsError } = await supabase
+      .from('order_items')
+      .select('id, order_id, product_id, shopify_product_id, name, quantity')
+      .in('order_id', orderIds)
+
+    if (itemsError) {
+      console.error('Error fetching order items:', itemsError)
+      throw itemsError
     }
-    
-    // IMPORTANT: Fetch ALL order items using batching to avoid Supabase limits
-    // Supabase IN queries have limits, so we need to batch
-    let allOrderItems: any[] = []
-    const batchSize = 500 // Smaller batches to avoid "Bad Request"
-    const batches: string[][] = []
-    for (let i = 0; i < orderIds.length; i += batchSize) {
-      batches.push(orderIds.slice(i, i + batchSize))
-    }
-
-    console.log(`📦 Fetching order items for ${orderIds.length} orders in ${batches.length} batch(es)`)
-
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i]
-      const { data: items, error: itemsError } = await supabase
-        .from('order_items')
-        .select('id, order_id, product_id, shopify_product_id, name, quantity')
-        .in('order_id', batch)
-        .limit(10000)
-
-      if (itemsError) {
-        console.error(`Error fetching order items batch ${i + 1}/${batches.length}:`, itemsError)
-        // Continue with other batches instead of failing completely
-        console.warn(`⚠️ Skipping batch ${i + 1}, continuing...`)
-        continue
-      }
-
-      if (items) {
-        allOrderItems = [...allOrderItems, ...items]
-        console.log(`✅ Batch ${i + 1}/${batches.length}: Fetched ${items.length} items`)
-      }
-    }
-
-    console.log(`✅ Total: Fetched ${allOrderItems.length} order items from ${batches.length} batch(es)`)
 
     console.log(`📋 Found ${allOrderItems?.length || 0} order items`)
-    
-    // Debug: Check what order_ids we actually got back
-    if (debugOrders.length > 0) {
-      const uniqueOrderIds = [...new Set(allOrderItems?.map((item: any) => item.order_id) || [])]
-      console.log(`🔍 Unique order_ids in fetched items: ${uniqueOrderIds.length} (sample: ${uniqueOrderIds.slice(0, 5).join(', ')})`)
-      debugOrders.forEach((order: any) => {
-        const hasItems = uniqueOrderIds.includes(order.id)
-        console.log(`🔍 Order #${order.shopify_order_number} (ID: ${order.id}): ${hasItems ? 'HAS items' : 'NO items in query results'}`)
-      })
-    }
 
     // Group items by order_id
     const orderItemsMap: Record<string, any[]> = {}
@@ -266,48 +146,15 @@ export async function POST(request: NextRequest) {
       orderItemsMap[item.order_id].push(item)
     })
 
-    // Debug: Check if orders 1809-1812 have items (reuse debugOrders from above)
-    if (debugOrders.length > 0) {
-      debugOrders.forEach((order: any) => {
-      const items = orderItemsMap[order.id] || []
-      console.log(`🔍 Order #${order.shopify_order_number} (ID: ${order.id}) has ${items.length} items in orderItemsMap`)
-      if (items.length === 0) {
-        // Check if items exist with this order_id
-        const itemsForThisOrder = allOrderItems?.filter((item: any) => item.order_id === order.id) || []
-        console.log(`⚠️ Order #${order.shopify_order_number}: Found ${itemsForThisOrder.length} items with matching order_id in allOrderItems`)
-        if (itemsForThisOrder.length > 0) {
-          console.log(`   Items:`, itemsForThisOrder.map((i: any) => ({ name: i.name, qty: i.quantity })))
-        }
-      }
-      })
-    }
-
     // 6. Allocate orders to containers based on available quantities
-    const allocations: { 
-      orderId: string
-      containerId: string
-      eta: string | null
-      isReallocation?: boolean
-      fromContainer?: string | null
-      toContainer?: string | null
-      orderNumber?: string | null
-    }[] = []
+    const allocations: { orderId: string, containerId: string, eta: string | null }[] = []
     const skipped: { orderId: string, orderNumber: string, reason: string, productsNeeded?: string }[] = []
     const containerMap = new Map(sortedContainers.map((c: any) => [c.id, c]))
 
     for (const order of orders) {
       const items = orderItemsMap[order.id] || []
-      const orderNum = order.shopify_order_number?.toString() || ''
-      const isDebugOrder = ['1809', '1810', '1811', '1812'].includes(orderNum)
-      
-      if (isDebugOrder) {
-        console.log(`🔍 Processing order #${orderNum}, items count: ${items.length}`)
-      }
       
       if (items.length === 0) {
-        if (isDebugOrder) {
-          console.log(`❌ Order #${orderNum} has no items`)
-        }
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
@@ -333,12 +180,6 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Debug logging for specific orders
-      if (isDebugOrder) {
-        console.log(`📋 Order #${orderNum} requires:`, requiredProducts)
-        console.log(`📋 Order #${orderNum} items:`, items.map((i: any) => ({ name: i.name, qty: i.quantity })))
-      }
-
       // If order only has turn function (no chairs), skip it
       if (Object.keys(requiredProducts).length === 0) {
         skipped.push({
@@ -350,176 +191,47 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // CRITICAL: Always find the EARLIEST container with space (chronological allocation)
-      // Since orders are sorted oldest-first, oldest orders should go to earliest containers
-      // This ensures proper chronological order: oldest → earliest containers, newest → later containers
+      // Find the FIRST container (in sequential order) that has enough stock for ALL products
+      // This ensures orders are allocated to containers 1 → 2 → 3 → 4... in sequence
       let allocatedContainer: string | null = null
-      const currentContainerId = order.container_id
-      let currentContainerEta = Infinity
-      let currentContainerCanFulfill = false
 
-      if (currentContainerId) {
-        const currentContainer = containerMap.get(currentContainerId)
-        currentContainerEta = currentContainer?.eta ? new Date(currentContainer.eta).getTime() : Infinity
-        
-        // Check if current container can actually fulfill this order
-        const currentInventory = containerInventory[currentContainerId]
-        currentContainerCanFulfill = true
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          const available = currentInventory[productName]?.quantity || 0
-          if (available < requiredQty) {
-            currentContainerCanFulfill = false
-            break
-          }
-        }
-      }
-
-      // Find the EARLIEST container (by ETA) that has enough stock for ALL products
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
         let canFulfill = true
-        const container = containerMap.get(containerId)
-        const newEta = container?.eta ? new Date(container.eta).getTime() : Infinity
 
         // Check if this container has enough of ALL products (excluding turn function)
         for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
           const available = inventory[productName]?.quantity || 0
           
-          // Debug logging for first few orders
-          if (isDebugOrder) {
-            console.log(`🔍 Order #${orderNum} checking ${container?.container_id}: needs ${requiredQty}x "${productName}", available: ${available}`)
-          }
-          
           if (available < requiredQty) {
             canFulfill = false
-            if (isDebugOrder) {
-              console.log(`❌ ${container?.container_id} cannot fulfill: ${productName} (need ${requiredQty}, have ${available})`)
-            }
             break
           }
         }
 
         if (canFulfill) {
-          // This container can fulfill the order
-          // CHRONOLOGICAL ORDER RULE: Since orders are processed oldest-first,
-          // each order should get the EARLIEST container with space to maintain:
-          // - Oldest orders → earliest containers
-          // - Newest orders → later containers
-          if (currentContainerId) {
-            if (containerId === currentContainerId) {
-              // Same container - keep it if it has space
-              allocatedContainer = containerId
-              break
-            } else if (!currentContainerCanFulfill) {
-              // Current container is FULL - move to EARLIEST container with space
-              // Since we iterate earliest-first, first match is the earliest available
-              // This maintains chronological order: older orders get earlier containers
-              allocatedContainer = containerId
-              break
-            } else if (newEta < currentContainerEta) {
-              // Current container has space, but this is EARLIER - move to it
-              // This improves chronological order (older orders in earlier containers)
-              allocatedContainer = containerId
-              break
-            } else {
-              // Current container has space and this container is LATER - don't move
-              // Moving to a later container would break chronological order
-              continue
-            }
-          } else {
-            // Unlinked order - allocate to EARLIEST available container
-            // This ensures chronological order: oldest unlinked orders get earliest containers
-            allocatedContainer = containerId
-            break
-          }
-        }
-      }
+          // This container can fulfill the order - allocate it (first match in sequence)
+          allocatedContainer = containerId
 
-      // If we found a container, proceed with allocation
-      if (allocatedContainer) {
-        const newContainer = containerMap.get(allocatedContainer)
-        
-        // Handle quantity adjustments
-        if (!currentContainerId || allocatedContainer !== currentContainerId) {
-          // Moving to a different container (or new allocation)
-          
-          // Add quantities back to old container (if moving from one to another)
-          if (currentContainerId && containerInventory[currentContainerId]) {
-            for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-              if (containerInventory[currentContainerId][productName]) {
-                containerInventory[currentContainerId][productName].quantity += requiredQty
-              }
-            }
-          }
-          
-          // SAFETY CHECK: Validate we're not over-allocating before deducting
-          let canAllocate = true
+          // Deduct quantities from inventory
           for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-            const available = containerInventory[allocatedContainer][productName]?.quantity || 0
-            if (available < requiredQty) {
-              canAllocate = false
-              console.warn(`⚠️ SAFETY CHECK FAILED: Order #${orderNum} needs ${requiredQty}x ${productName} but only ${available} available in ${newContainer?.container_id}`)
-              break
-            }
+            containerInventory[containerId][productName].quantity -= requiredQty
           }
-          
-          if (!canAllocate) {
-            // Skip this allocation - container doesn't have enough stock
-            allocatedContainer = null
-          } else {
-            // Deduct quantities from new container (safe to do now)
-            for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-              if (containerInventory[allocatedContainer][productName]) {
-                containerInventory[allocatedContainer][productName].quantity -= requiredQty
-                // Double-check we didn't go negative
-                if (containerInventory[allocatedContainer][productName].quantity < 0) {
-                  console.error(`❌ OVER-ALLOCATION DETECTED: ${newContainer?.container_id} has negative quantity for ${productName}: ${containerInventory[allocatedContainer][productName].quantity}`)
-                  // Fix it by setting to 0
-                  containerInventory[allocatedContainer][productName].quantity = 0
-                }
-              }
-            }
-          }
+
+          break // Stop looking - we found the first container in sequence that can fulfill
         }
-        // If staying in same container, no quantity changes needed (already deducted in step 4)
       }
 
       if (allocatedContainer) {
-        // Only allocate if it's different from current container (or unlinked)
-        if (!currentContainerId || allocatedContainer !== currentContainerId) {
-          const container = containerMap.get(allocatedContainer)
-          const oldContainer = currentContainerId ? containerMap.get(currentContainerId) : null
-          allocations.push({
-            orderId: order.id,
-            containerId: allocatedContainer,
-            eta: container?.eta || null,
-            isReallocation: !!currentContainerId,
-            fromContainer: oldContainer?.container_id || null,
-            toContainer: container?.container_id || null,
-            orderNumber: order.shopify_order_number,
-          })
-          
-          if (currentContainerId) {
-            console.log(`🔄 Reallocating order #${order.shopify_order_number} from ${oldContainer?.container_id} to ${container?.container_id}`)
-          }
-        }
+        const container = containerMap.get(allocatedContainer)
+        allocations.push({
+          orderId: order.id,
+          containerId: allocatedContainer,
+          eta: container?.eta || null,
+        })
       } else {
         // Log why this order was skipped
-        const productKeys = Object.keys(requiredProducts)
-        const productsNeeded = productKeys.length > 0 
-          ? productKeys.join(', ') 
-          : 'Unknown products (check order items)'
-        
-        // Log order items for debugging
-        if (productKeys.length === 0 || isDebugOrder) {
-          console.log(`⚠️ Order #${orderNum} has no matching products. Order items:`, items.map((i: any) => ({
-            name: i.name,
-            quantity: i.quantity,
-            product_id: i.product_id,
-          })))
-          console.log(`⚠️ Order #${orderNum} requiredProducts after filtering:`, requiredProducts)
-        }
-        
+        const productsNeeded = Object.keys(requiredProducts).join(', ')
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
@@ -583,47 +295,16 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // Count new allocations vs reallocations
-    const newAllocations = allocations.filter((a: any) => !a.isReallocation)
-    const reallocations = allocations.filter((a: any) => a.isReallocation)
-
-    console.log('📊 Final results:', {
-      newAllocations: newAllocations.length,
-      reallocations: reallocations.length,
-      skipped: skipped.length,
-      sampleReallocations: reallocations.slice(0, 5).map((r: any) => ({
-        order: r.orderNumber,
-        from: r.fromContainer,
-        to: r.toContainer,
-      })),
-    })
-
-    let message = ''
-    if (newAllocations.length > 0) {
-      message += `${newAllocations.length} nieuwe bestellingen toegewezen. `
-    }
-    if (reallocations.length > 0) {
-      message += `${reallocations.length} bestellingen verplaatst naar containers met ruimte. `
-    }
-    if (skipped.length > 0) {
-      message += `${skipped.length} overgeslagen.`
-    }
-    if (!message) {
-      message = 'Geen wijzigingen nodig - alle bestellingen staan al in de juiste containers.'
-    }
-
     return NextResponse.json({
       success: true,
       allocated: allocations.length,
-      newAllocations: newAllocations.length,
-      reallocations: reallocations.length,
       skipped: skipped.length,
       skippedReasons: {
         no_items: skipped.filter(s => s.reason === 'no_items').length,
         insufficient_stock: skipped.filter(s => s.reason === 'insufficient_stock').length,
       },
       inventoryStatus,
-      message,
+      message: `Successfully allocated ${allocations.length} orders. ${skipped.length} orders skipped.`,
     })
   } catch (error: any) {
     console.error('Error allocating orders:', error)
