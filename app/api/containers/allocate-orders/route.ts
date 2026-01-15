@@ -68,11 +68,22 @@ export async function POST(request: NextRequest) {
 
     // 3. Build container inventory: { containerId: { productName: { quantity, productId } } }
     // Also create ordered array of container IDs for sequential processing
+    // CRITICAL: Initialize inventory for ALL containers (including delivered ones)
+    // because linked orders might be linked to delivered containers
     const containerInventory: Record<string, Record<string, { quantity: number, productId: string, shopifyId?: number }>> = {}
     const orderedContainerIds: string[] = []
     
-    sortedContainers.forEach((c: any) => {
+    // Initialize inventory for all containers (including delivered ones for deduction purposes)
+    const { data: allContainers } = await supabase
+      .from('containers')
+      .select('id')
+    
+    allContainers?.forEach((c: any) => {
       containerInventory[c.id] = {}
+    })
+    
+    // Only add non-delivered containers to ordered list for allocation
+    sortedContainers.forEach((c: any) => {
       orderedContainerIds.push(c.id)
     })
 
@@ -84,6 +95,10 @@ export async function POST(request: NextRequest) {
       const quantity = cp.quantity || 0
 
       if (containerId && productName && productId) {
+        // Ensure container exists in inventory (should always exist after initialization above)
+        if (!containerInventory[containerId]) {
+          containerInventory[containerId] = {}
+        }
         containerInventory[containerId][productName] = {
           quantity,
           productId,
