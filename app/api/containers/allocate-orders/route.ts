@@ -131,15 +131,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`📋 Found ${orders.length} unlinked orders to allocate (${linkedOrders.length} linked orders are frozen)`)
 
-    // 5. Get all order items for these orders
+    // 5. Get all order items for BOTH unlinked AND linked orders
+    // CRITICAL: We need linked orders' items to properly deduct from inventory
     // Note: Supabase has a default limit of 1000 rows, so we need to fetch in batches
-    const orderIds = orders.map((o: any) => o.id)
+    const allOrderIds = [...orders.map((o: any) => o.id), ...linkedOrders.map((o: any) => o.id)]
     let allOrderItems: any[] = []
     
     // Batch the order_ids query if too many (Supabase IN clause limit is ~1000)
     const batchSize = 500
-    for (let i = 0; i < orderIds.length; i += batchSize) {
-      const batch = orderIds.slice(i, i + batchSize)
+    for (let i = 0; i < allOrderIds.length; i += batchSize) {
+      const batch = allOrderIds.slice(i, i + batchSize)
       
       // Fetch with explicit limit to get all items (not just 1000)
       let batchItems: any[] = []
