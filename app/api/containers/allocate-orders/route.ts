@@ -124,18 +124,46 @@ export async function POST(request: NextRequest) {
     console.log(`📋 Found ${orders.length} unlinked orders to allocate`)
 
     // 5. Get all order items for these orders
+    // Note: Supabase has a default limit of 1000 rows, so we need to fetch in batches
     const orderIds = orders.map((o: any) => o.id)
-    const { data: allOrderItems, error: itemsError } = await supabase
-      .from('order_items')
-      .select('id, order_id, product_id, shopify_product_id, name, quantity')
-      .in('order_id', orderIds)
+    let allOrderItems: any[] = []
+    
+    // Batch the order_ids query if too many (Supabase IN clause limit is ~1000)
+    const batchSize = 500
+    for (let i = 0; i < orderIds.length; i += batchSize) {
+      const batch = orderIds.slice(i, i + batchSize)
+      
+      // Fetch with explicit limit to get all items (not just 1000)
+      let batchItems: any[] = []
+      let offset = 0
+      const limit = 1000
+      
+      while (true) {
+        const { data: items, error: itemsError } = await supabase
+          .from('order_items')
+          .select('id, order_id, product_id, shopify_product_id, name, quantity')
+          .in('order_id', batch)
+          .range(offset, offset + limit - 1)
 
-    if (itemsError) {
-      console.error('Error fetching order items:', itemsError)
-      throw itemsError
+        if (itemsError) {
+          console.error('Error fetching order items:', itemsError)
+          throw itemsError
+        }
+
+        if (!items || items.length === 0) break
+        
+        batchItems = [...batchItems, ...items]
+        
+        // If we got less than the limit, we've fetched all items for this batch
+        if (items.length < limit) break
+        
+        offset += limit
+      }
+      
+      allOrderItems = [...allOrderItems, ...batchItems]
     }
 
-    console.log(`📋 Found ${allOrderItems?.length || 0} order items`)
+    console.log(`📋 Found ${allOrderItems.length} order items`)
 
     // Group items by order_id
     const orderItemsMap: Record<string, any[]> = {}
@@ -145,6 +173,13 @@ export async function POST(request: NextRequest) {
       }
       orderItemsMap[item.order_id].push(item)
     })
+    
+    // Debug: Check which orders have no items
+    const ordersWithNoItems = orders.filter((o: any) => !orderItemsMap[o.id] || orderItemsMap[o.id].length === 0)
+    if (ordersWithNoItems.length > 0) {
+      console.log(`⚠️ ${ordersWithNoItems.length} orders have no items in orderItemsMap:`, 
+        ordersWithNoItems.slice(0, 10).map((o: any) => o.shopify_order_number))
+    }
 
     // 5.5. First, deduct quantities from already-linked orders to get actual available inventory
     // This prevents over-allocation when re-running smart allocation
