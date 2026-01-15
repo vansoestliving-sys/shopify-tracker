@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/server'
 
 // Smart allocation: Links orders chronologically based on container product quantities
+// 
+// CRITICAL FIFO RULES (Non-Negotiable):
+// 1. Orders processed strictly by created_at ASC (oldest first)
+// 2. Containers filled strictly by container_eta ASC (earliest first)
+// 3. Linked orders are FROZEN - never reassigned automatically
+// 4. Only unlinked orders are processed by this function
+// 5. Deterministic: Same data = same result (no randomness)
+//
 // Note: Route is protected by middleware, so only authenticated admins can access
 export async function POST(request: NextRequest) {
   try {
@@ -21,11 +29,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Sort containers by ETA (delivery date) - earliest first
-    // This ensures orders go to containers with earliest delivery dates first
+    // CRITICAL: This ensures strict FIFO by container ETA
+    // Containers with earlier ETAs are always filled first
+    // Containers without ETA go to the end (Infinity)
     const sortedContainers = (containers || []).sort((a: any, b: any) => {
       const aDate = a.eta ? new Date(a.eta).getTime() : Infinity
       const bDate = b.eta ? new Date(b.eta).getTime() : Infinity
-      return aDate - bDate // Ascending: earliest date first
+      return aDate - bDate // Ascending: earliest date first (strict FIFO)
     })
 
     console.log(`📦 Found ${sortedContainers.length} containers (sorted by ETA - earliest first)`)
@@ -88,40 +98,38 @@ export async function POST(request: NextRequest) {
       })),
     })
 
-    // 4. Get ALL orders (both unlinked AND linked) for reallocation
-    // This allows moving orders from later containers to earlier ones when space opens up
+    // 4. Get ONLY unlinked orders for allocation
+    // CRITICAL: Slim toewijzen MUST only assign unlinked orders
+    // Linked orders are FROZEN and must never be moved automatically
     const { data: allOrders, error: ordersError } = await supabase
       .from('orders')
       .select('id, shopify_order_number, created_at, container_id')
-      .order('created_at', { ascending: true }) // Oldest first
+      .order('created_at', { ascending: true }) // FIFO: Oldest first
 
     if (ordersError) {
       console.error('Error fetching orders:', ordersError)
       throw ordersError
     }
 
-    // Separate unlinked and linked orders
+    // CRITICAL RULE: Only process unlinked orders
+    // Linked orders are frozen and must not be reassigned
     const unlinkedOrders = (allOrders || []).filter((o: any) => !o.container_id)
     const linkedOrders = (allOrders || []).filter((o: any) => o.container_id)
     
-    // For reallocation, we'll process unlinked first, then try to move linked orders to earlier containers
-    const orders = [...unlinkedOrders, ...linkedOrders]
-
-    if (ordersError) {
-      console.error('Error fetching orders:', ordersError)
-      throw ordersError
-    }
+    // ONLY process unlinked orders - linked orders are frozen
+    const orders = unlinkedOrders
 
     if (!orders || orders.length === 0) {
       console.log('ℹ️ No unlinked orders found')
       return NextResponse.json({
         success: true,
         allocated: 0,
+        skipped: 0,
         message: 'No unlinked orders to allocate',
       })
     }
 
-    console.log(`📋 Found ${orders.length} unlinked orders to allocate`)
+    console.log(`📋 Found ${orders.length} unlinked orders to allocate (${linkedOrders.length} linked orders are frozen)`)
 
     // 5. Get all order items for these orders
     // Note: Supabase has a default limit of 1000 rows, so we need to fetch in batches
@@ -211,12 +219,14 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 6. Allocate orders to containers based on available quantities
+    // 6. Allocate ONLY unlinked orders to containers based on available quantities
+    // CRITICAL: Linked orders are FROZEN and must never be processed here
     const allocations: { orderId: string, containerId: string, eta: string | null }[] = []
     const skipped: { orderId: string, orderNumber: string, reason: string, productsNeeded?: string }[] = []
     const containerMap = new Map(sortedContainers.map((c: any) => [c.id, c]))
 
-    // Process unlinked orders first, then linked orders (for reallocation)
+    // Process ONLY unlinked orders in strict FIFO order (by created_at)
+    // Linked orders are frozen and excluded from this loop
     for (const order of orders) {
       const items = orderItemsMap[order.id] || []
       
@@ -269,8 +279,9 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Find the FIRST container (in sequential order) that has enough stock for ALL products
-      // This ensures orders are allocated to containers 1 → 2 → 3 → 4... in sequence
+      // Find the FIRST container (in ETA order) that has enough stock for ALL products
+      // CRITICAL: This ensures strict FIFO - containers are never skipped if capacity exists
+      // We iterate through containers in ETA order (earliest first) and take the first match
       let allocatedContainer: string | null = null
 
       for (const containerId of orderedContainerIds) {

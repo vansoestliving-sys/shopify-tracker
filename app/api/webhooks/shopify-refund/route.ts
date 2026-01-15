@@ -275,162 +275,51 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Helper function to reallocate orders after deletion
+// Helper function to handle FIFO "shift up" after order deletion
+// CRITICAL: This is NOT a full reshuffle - it's a controlled one-position shift
+// Orders after the deleted one stay in the same container and maintain FIFO order
 async function reallocateOrdersAfterDeletion(
   supabase: any,
   containerId: string,
   deletedOrderDate: string
 ) {
   try {
+    console.log('🔄 Processing FIFO shift-up after order deletion')
+    
     // Find all orders in the same container that were created AFTER the deleted order
-    const { data: ordersToReallocate, error: reallocError } = await supabase
+    // These orders will "shift up" by one position (the deleted order's spot is now free)
+    const { data: ordersAfterDeleted, error: reallocError } = await supabase
       .from('orders')
-      .select('id, created_at')
+      .select('id, shopify_order_number, created_at')
       .eq('container_id', containerId)
       .gt('created_at', deletedOrderDate)
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: true }) // FIFO: Oldest first
 
     if (reallocError) {
-      console.error('Error finding orders to reallocate:', reallocError)
+      console.error('Error finding orders after deleted one:', reallocError)
       return
     }
 
-    if (!ordersToReallocate || ordersToReallocate.length === 0) {
-      console.log('ℹ️ No orders to reallocate')
+    if (!ordersAfterDeleted || ordersAfterDeleted.length === 0) {
+      console.log('ℹ️ No orders after deleted one - no shift-up needed')
       return
     }
 
-    console.log(`🔄 Reallocating ${ordersToReallocate.length} order(s) after deletion`)
-
-    // Get container details
-    const { data: container } = await supabase
-      .from('containers')
-      .select('id, eta')
-      .eq('id', containerId)
-      .single()
-
-    if (!container) {
-      console.error('Container not found:', containerId)
-      return
-    }
-
-    // Get container products
-    const { data: containerProducts } = await supabase
-      .from('container_products')
-      .select(`
-        product_id,
-        quantity,
-        product:products(name)
-      `)
-      .eq('container_id', containerId)
-
-    // Get order items for orders to reallocate
-    const orderIds = ordersToReallocate.map((o: any) => o.id)
-    const { data: orderItems } = await supabase
-      .from('order_items')
-      .select('order_id, name, quantity')
-      .in('order_id', orderIds)
-
-    // Group items by order
-    const orderItemsMap: Record<string, any[]> = {}
-    orderItems?.forEach((item: any) => {
-      if (!orderItemsMap[item.order_id]) {
-        orderItemsMap[item.order_id] = []
-      }
-      orderItemsMap[item.order_id].push(item)
-    })
-
-    // Build container inventory
-    const inventory: Record<string, number> = {}
-    containerProducts?.forEach((cp: any) => {
-      const productName = cp.product?.name?.toLowerCase().trim()
-      if (productName) {
-        inventory[productName] = cp.quantity || 0
-      }
-    })
-
-    // Get currently allocated quantities (excluding the ones we're reallocating)
-    const { data: currentOrders } = await supabase
-      .from('orders')
-      .select('id')
-      .eq('container_id', containerId)
-      .not('id', 'in', `(${orderIds.join(',')})`)
-
-    const currentOrderIds = currentOrders?.map((o: any) => o.id) || []
-
-    if (currentOrderIds.length > 0) {
-      const { data: allocatedItems } = await supabase
-        .from('order_items')
-        .select('name, quantity')
-        .in('order_id', currentOrderIds)
-
-      // Deduct allocated quantities
-      allocatedItems?.forEach((item: any) => {
-        const productName = item.name?.toLowerCase().trim()
-        if (productName && !productName.includes('draaifunctie')) {
-          inventory[productName] = (inventory[productName] || 0) - (item.quantity || 1)
-        }
-      })
-    }
-
-    // Reallocate orders in chronological order
-    const sortedOrders = ordersToReallocate.sort((a: any, b: any) =>
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    )
-
-    for (const order of sortedOrders) {
-      const items = orderItemsMap[order.id] || []
-
-      // Calculate required products (excluding turn function)
-      const requiredProducts: Record<string, number> = {}
-      items.forEach((item: any) => {
-        const productName = item.name?.toLowerCase().trim()
-        if (productName && !productName.includes('draaifunctie')) {
-          requiredProducts[productName] = (requiredProducts[productName] || 0) + (item.quantity || 1)
-        }
-      })
-
-      // Check if container has enough stock
-      let canFulfill = true
-      for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-        if ((inventory[productName] || 0) < requiredQty) {
-          canFulfill = false
-          break
-        }
-      }
-
-      if (canFulfill) {
-        // Link order to container (it's already linked, but we're confirming)
-        await supabase
-          .from('orders')
-          .update({
-            container_id: containerId,
-            delivery_eta: container.eta,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', order.id)
-
-        // Deduct from inventory
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          inventory[productName] = (inventory[productName] || 0) - requiredQty
-        }
-
-        console.log(`✅ Reallocated order ${order.id} to container ${containerId}`)
-      } else {
-        console.log(`⚠️ Order ${order.id} cannot be reallocated - insufficient stock`)
-        // Unlink if can't fulfill
-        await supabase
-          .from('orders')
-          .update({
-            container_id: null,
-            delivery_eta: null,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', order.id)
-      }
-    }
+    console.log(`📋 Found ${ordersAfterDeleted.length} order(s) after deleted order - they maintain FIFO position`)
+    console.log(`✅ Shift-up complete: Orders remain in container ${containerId} in FIFO order`)
+    
+    // CRITICAL: Orders after the deleted one stay linked to the same container
+    // They don't need to be moved - the "shift up" is automatic because:
+    // 1. The deleted order is gone (freed capacity)
+    // 2. Orders after it maintain their FIFO position
+    // 3. New orders will go to the end (handled by Slim toewijzen)
+    
+    // No action needed - orders are already correctly positioned
+    // The freed capacity from the deleted order is available for future allocations
+    // but existing linked orders maintain their positions (FIFO preserved)
+    
   } catch (error: any) {
-    console.error('Error during reallocation:', error)
+    console.error('Error during shift-up:', error)
   }
 }
 
