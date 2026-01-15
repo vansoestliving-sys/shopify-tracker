@@ -211,13 +211,25 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // If order only has turn function (no chairs), skip it
+      // If order only has turn function (no chairs) or items with no names, skip it
       if (Object.keys(requiredProducts).length === 0) {
+        // Check if order has items with no names or all items are turn function
+        const hasItemsWithNoName = items.some((item: any) => !item.name || !item.name.trim())
+        const hasOnlyTurnFunction = items.every((item: any) => {
+          const name = item.name?.toLowerCase().trim()
+          return !name || name.includes('draaifunctie') || name.includes('turn function')
+        })
+        
+        const reason = hasItemsWithNoName ? 'no_product_name' : 'only_turn_function'
+        const productsNeeded = hasItemsWithNoName 
+          ? 'Items have no product name' 
+          : 'Only turn function (not tracked)'
+        
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
-          reason: 'only_turn_function',
-          productsNeeded: 'Only turn function (not tracked)',
+          reason,
+          productsNeeded,
         })
         continue
       }
@@ -262,7 +274,9 @@ export async function POST(request: NextRequest) {
         })
       } else {
         // Log why this order was skipped
-        const productsNeeded = Object.keys(requiredProducts).join(', ')
+        const productsNeeded = Object.keys(requiredProducts).length > 0 
+          ? Object.keys(requiredProducts).join(', ')
+          : 'No valid products found'
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
@@ -276,8 +290,18 @@ export async function POST(request: NextRequest) {
     if (skipped.length > 0) {
       console.log('⚠️ Sample skipped orders (first 10):', skipped.slice(0, 10).map(s => ({
         orderNumber: s.orderNumber,
-        productsNeeded: s.productsNeeded,
+        reason: s.reason,
+        productsNeeded: s.productsNeeded || 'Not specified',
       })))
+      
+      // Log orders with undefined productsNeeded for debugging
+      const undefinedProducts = skipped.filter(s => !s.productsNeeded)
+      if (undefinedProducts.length > 0) {
+        console.log('⚠️ Orders with undefined productsNeeded:', undefinedProducts.map(s => ({
+          orderNumber: s.orderNumber,
+          reason: s.reason,
+        })))
+      }
     }
 
     console.log('✅ Allocation complete:', {
