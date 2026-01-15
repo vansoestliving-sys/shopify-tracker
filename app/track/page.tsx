@@ -41,10 +41,14 @@ export default function TrackPage() {
     setOrder(null)
 
     try {
+      // Trim whitespace from both fields to avoid mismatches
+      const trimmedOrderId = orderId.trim()
+      const trimmedFirstName = firstName.trim()
+
       const response = await fetch('/api/track', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, firstName }),
+        body: JSON.stringify({ orderId: trimmedOrderId, firstName: trimmedFirstName }),
       })
 
       const data = await response.json()

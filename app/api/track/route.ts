@@ -14,8 +14,11 @@ export async function POST(request: NextRequest) {
 
     const supabase = createSupabaseAdminClient()
 
-    // Strip leading "#" from order ID if present
+    // Strip leading "#" from order ID if present and trim whitespace
     const cleanOrderId = orderId.toString().replace(/^#+/, '').trim()
+    
+    // Trim whitespace from first name (handles spaces before/after)
+    const cleanFirstName = firstName.toString().trim()
 
     // Find order by Shopify order number and first name (case-insensitive)
     const { data: orders, error: ordersError } = await supabase
@@ -38,11 +41,11 @@ export async function POST(request: NextRequest) {
         )
       `)
       .eq('shopify_order_number', cleanOrderId)
-      .ilike('customer_first_name', firstName)
+      .ilike('customer_first_name', cleanFirstName)
 
-    // Filter by case-insensitive first name match
+    // Filter by case-insensitive first name match (trimmed on both sides)
     const order = orders?.find(o => 
-      o.customer_first_name?.toLowerCase() === firstName.toLowerCase()
+      o.customer_first_name?.toLowerCase().trim() === cleanFirstName.toLowerCase()
     )
 
     if (ordersError || !order) {
