@@ -131,16 +131,15 @@ export async function POST(request: NextRequest) {
 
     console.log(`📋 Found ${orders.length} unlinked orders to allocate (${linkedOrders.length} linked orders are frozen)`)
 
-    // 5. Get all order items for BOTH unlinked AND linked orders
-    // CRITICAL: We need linked orders' items to properly deduct from inventory
+    // 5. Get order items for unlinked orders (for allocation)
     // Note: Supabase has a default limit of 1000 rows, so we need to fetch in batches
-    const allOrderIds = [...orders.map((o: any) => o.id), ...linkedOrders.map((o: any) => o.id)]
+    const orderIds = orders.map((o: any) => o.id)
     let allOrderItems: any[] = []
     
     // Batch the order_ids query if too many (Supabase IN clause limit is ~1000)
     const batchSize = 500
-    for (let i = 0; i < allOrderIds.length; i += batchSize) {
-      const batch = allOrderIds.slice(i, i + batchSize)
+    for (let i = 0; i < orderIds.length; i += batchSize) {
+      const batch = orderIds.slice(i, i + batchSize)
       
       // Fetch with explicit limit to get all items (not just 1000)
       let batchItems: any[] = []
@@ -190,31 +189,53 @@ export async function POST(request: NextRequest) {
         ordersWithNoItems.slice(0, 10).map((o: any) => o.shopify_order_number))
     }
 
-    // 5.5. First, deduct quantities from already-linked orders to get actual available inventory
+    // 5.5. Deduct quantities from already-linked orders to get actual available inventory
+    // CRITICAL: We fetch linked orders' items SEPARATELY (not as part of allocation)
     // This prevents over-allocation when re-running smart allocation
-    for (const order of linkedOrders) {
-      const items = orderItemsMap[order.id] || []
-      if (items.length === 0) continue
+    if (linkedOrders.length > 0) {
+      const linkedOrderIds = linkedOrders.map((o: any) => o.id)
+      let linkedOrderItems: any[] = []
+      
+      // Fetch linked orders' items in batches (separate from unlinked orders)
+      for (let i = 0; i < linkedOrderIds.length; i += batchSize) {
+        const batch = linkedOrderIds.slice(i, i + batchSize)
+        const { data: items, error: itemsError } = await supabase
+          .from('order_items')
+          .select('order_id, name, quantity')
+          .in('order_id', batch)
 
-      const currentContainerId = order.container_id
-      if (!currentContainerId) continue
-
-      // Calculate required quantities per product (excluding turn function)
-      const requiredProducts: Record<string, number> = {}
-      for (const item of items) {
-        const productName = item.name?.toLowerCase().trim()
-        if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
-          const itemQty = item.quantity || 1
-          requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
+        if (itemsError) {
+          console.error('Error fetching linked order items:', itemsError)
+          throw itemsError
         }
+        linkedOrderItems = [...linkedOrderItems, ...(items || [])]
       }
 
-      // Deduct from the container's inventory (these orders are already allocated)
-      const inventory = containerInventory[currentContainerId]
-      if (inventory) {
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          if (inventory[productName]) {
-            inventory[productName].quantity -= requiredQty
+      // Deduct linked orders' quantities from inventory
+      for (const order of linkedOrders) {
+        const items = linkedOrderItems.filter((item: any) => item.order_id === order.id)
+        if (items.length === 0) continue
+
+        const currentContainerId = order.container_id
+        if (!currentContainerId) continue
+
+        // Calculate required quantities per product (excluding turn function)
+        const requiredProducts: Record<string, number> = {}
+        for (const item of items) {
+          const productName = item.name?.toLowerCase().trim()
+          if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
+            const itemQty = item.quantity || 1
+            requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
+          }
+        }
+
+        // Deduct from the container's inventory (these orders are already allocated)
+        const inventory = containerInventory[currentContainerId]
+        if (inventory) {
+          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+            if (inventory[productName]) {
+              inventory[productName].quantity -= requiredQty
+            }
           }
         }
       }
