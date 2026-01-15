@@ -146,11 +146,42 @@ export async function POST(request: NextRequest) {
       orderItemsMap[item.order_id].push(item)
     })
 
+    // 5.5. First, deduct quantities from already-linked orders to get actual available inventory
+    // This prevents over-allocation when re-running smart allocation
+    for (const order of linkedOrders) {
+      const items = orderItemsMap[order.id] || []
+      if (items.length === 0) continue
+
+      const currentContainerId = order.container_id
+      if (!currentContainerId) continue
+
+      // Calculate required quantities per product (excluding turn function)
+      const requiredProducts: Record<string, number> = {}
+      for (const item of items) {
+        const productName = item.name?.toLowerCase().trim()
+        if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
+          const itemQty = item.quantity || 1
+          requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
+        }
+      }
+
+      // Deduct from the container's inventory (these orders are already allocated)
+      const inventory = containerInventory[currentContainerId]
+      if (inventory) {
+        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+          if (inventory[productName]) {
+            inventory[productName].quantity -= requiredQty
+          }
+        }
+      }
+    }
+
     // 6. Allocate orders to containers based on available quantities
     const allocations: { orderId: string, containerId: string, eta: string | null }[] = []
     const skipped: { orderId: string, orderNumber: string, reason: string, productsNeeded?: string }[] = []
     const containerMap = new Map(sortedContainers.map((c: any) => [c.id, c]))
 
+    // Process unlinked orders first, then linked orders (for reallocation)
     for (const order of orders) {
       const items = orderItemsMap[order.id] || []
       
