@@ -19,9 +19,11 @@ export async function POST(request: NextRequest) {
     console.log('✅ Admin client initialized')
 
     // 1. Get all containers with their products and quantities
+    // CRITICAL: Exclude delivered containers - they should not receive new orders
     const { data: containers, error: containersError } = await supabase
       .from('containers')
-      .select('id, container_id, eta')
+      .select('id, container_id, eta, status')
+      .neq('status', 'delivered') // Exclude delivered containers
 
     if (containersError) {
       console.error('Error fetching containers:', containersError)
@@ -234,11 +236,18 @@ export async function POST(request: NextRequest) {
         if (inventory) {
           for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
             if (inventory[productName]) {
+              const before = inventory[productName].quantity
               inventory[productName].quantity -= requiredQty
+              const after = inventory[productName].quantity
+              if (after < 0) {
+                console.warn(`⚠️ Container ${currentContainerId} has negative inventory for ${productName}: ${after} (was ${before}, deducted ${requiredQty})`)
+              }
             }
           }
         }
       }
+      
+      console.log(`📊 Deducted ${linkedOrders.length} linked orders from inventory`)
     }
 
     // 6. Allocate ONLY unlinked orders to containers based on available quantities
@@ -308,29 +317,48 @@ export async function POST(request: NextRequest) {
 
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
+        if (!inventory) continue // Skip if container has no inventory data
+        
+        // Check if container has enough of ALL products (excluding turn function)
+        // CRITICAL: Available must be >= required, and must be > 0 (not full)
         let canFulfill = true
-
-        // Check if this container has enough of ALL products (excluding turn function)
         for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
           const available = inventory[productName]?.quantity || 0
           
-          if (available < requiredQty) {
+          // Must have enough AND must be positive (not already full/over-allocated)
+          if (available < requiredQty || available <= 0) {
             canFulfill = false
             break
           }
         }
 
-        if (canFulfill) {
-          // This container can fulfill the order - allocate it (first match in sequence)
-          allocatedContainer = containerId
+      if (canFulfill) {
+        // This container can fulfill the order - allocate it (first match in sequence)
+        allocatedContainer = containerId
+        const container = containerMap.get(containerId)
+        
+        console.log(`✅ Allocating order ${order.shopify_order_number} to container ${container?.container_id} (ETA: ${container?.eta || 'N/A'})`)
 
-          // Deduct quantities from inventory
-          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-            containerInventory[containerId][productName].quantity -= requiredQty
-          }
-
-          break // Stop looking - we found the first container in sequence that can fulfill
+        // Deduct quantities from inventory
+        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+          containerInventory[containerId][productName].quantity -= requiredQty
         }
+
+        break // Stop looking - we found the first container in sequence that can fulfill
+      } else {
+        // Log why this container was skipped
+        const container = containerMap.get(containerId)
+        const missingProducts: string[] = []
+        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+          const available = containerInventory[containerId]?.[productName]?.quantity || 0
+          if (available < requiredQty) {
+            missingProducts.push(`${productName} (need ${requiredQty}, have ${available})`)
+          }
+        }
+        if (missingProducts.length > 0) {
+          console.log(`⏭️  Skipping container ${container?.container_id} (ETA: ${container?.eta || 'N/A'}) - insufficient: ${missingProducts.join(', ')}`)
+        }
+      }
       }
 
       if (allocatedContainer) {
