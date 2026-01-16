@@ -257,57 +257,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Auto-link to container if products match (if container_id not manually set)
+    // CRITICAL: Do NOT auto-link - orders should only be linked via "Slim toewijzen"
+    // This ensures FIFO allocation and prevents linking to delivered containers
+    // Orders created via webhook or admin will remain unlinked until "Slim toewijzen" is run
     if (!container_id && itemsToInsert.length > 0) {
-      try {
-        // Find containers with matching products
-        const productIds = itemsToInsert.map(item => item.product_id)
-        
-        const { data: containerProducts } = await supabase
-          .from('container_products')
-          .select('container_id, product_id')
-          .in('product_id', productIds)
-
-        if (containerProducts && containerProducts.length > 0) {
-          // Count matches per container
-          const containerMatches: Record<string, number> = {}
-          containerProducts.forEach(cp => {
-            containerMatches[cp.container_id] = (containerMatches[cp.container_id] || 0) + 1
-          })
-
-          // Find container with most matches
-          let bestContainerId: string | null = null
-          let maxMatches = 0
-          for (const [containerId, matches] of Object.entries(containerMatches)) {
-            if (matches > maxMatches) {
-              maxMatches = matches
-              bestContainerId = containerId
-            }
-          }
-
-          if (bestContainerId) {
-            // Get container ETA
-            const { data: container } = await supabase
-              .from('containers')
-              .select('eta')
-              .eq('id', bestContainerId)
-              .single()
-
-            // Update order with container
-            await supabase
-              .from('orders')
-              .update({
-                container_id: bestContainerId,
-                delivery_eta: container?.eta || null,
-              })
-              .eq('id', order.id)
-
-            console.log(`✅ Auto-linked order ${shopify_order_number} to container ${bestContainerId}`)
-          }
-        }
-      } catch (linkError) {
-        console.warn('Auto-linking failed (non-critical):', linkError)
-        // Non-critical, continue
-      }
+      // Disabled auto-linking to ensure FIFO allocation
+      // Orders will be linked via "Slim toewijzen" button which respects FIFO rules
+      console.log(`ℹ️ Order ${shopify_order_number} created without container - will be linked via "Slim toewijzen"`)
     }
 
     // If container_id was manually set, update delivery_eta from container
