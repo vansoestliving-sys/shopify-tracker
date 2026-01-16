@@ -256,14 +256,32 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Auto-link to container if products match (if container_id not manually set)
-    // CRITICAL: Do NOT auto-link - orders should only be linked via "Slim toewijzen"
-    // This ensures FIFO allocation and prevents linking to delivered containers
-    // Orders created via webhook or admin will remain unlinked until "Slim toewijzen" is run
-    if (!container_id && itemsToInsert.length > 0) {
-      // Disabled auto-linking to ensure FIFO allocation
-      // Orders will be linked via "Slim toewijzen" button which respects FIFO rules
-      console.log(`ℹ️ Order ${shopify_order_number} created without container - will be linked via "Slim toewijzen"`)
+    // Auto-allocate order using FIFO rules (if container_id not manually set)
+    // Uses the same FIFO logic as "Slim toewijzen" but for a single order
+    if (!container_id && itemsToInsert.length > 0 && order?.id) {
+      try {
+        const { allocateOrderToContainer } = await import('@/lib/order-allocation')
+        const allocation = await allocateOrderToContainer(order.id)
+        
+        if (allocation) {
+          // Update order with container assignment
+          await supabase
+            .from('orders')
+            .update({
+              container_id: allocation.containerId,
+              delivery_eta: allocation.eta,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', order.id)
+          
+          console.log(`✅ Auto-allocated order ${shopify_order_number} to container`)
+        } else {
+          console.log(`ℹ️ Order ${shopify_order_number} could not be auto-allocated - no available container`)
+        }
+      } catch (allocError) {
+        // Non-critical - log but don't fail
+        console.warn('Auto-allocation failed (non-critical):', allocError)
+      }
     }
 
     // If container_id was manually set, update delivery_eta from container

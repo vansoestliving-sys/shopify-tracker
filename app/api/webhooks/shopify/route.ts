@@ -268,82 +268,31 @@ export async function POST(request: NextRequest) {
       if (itemsError) {
         console.error('Error creating order items:', itemsError)
       } else {
-        // Auto-link order to container based on products
-        try {
-          const { data: orderItemsForLinking } = await supabase
-            .from('order_items')
-            .select('shopify_product_id')
-            .eq('order_id', order.id)
-
-          if (orderItemsForLinking && orderItemsForLinking.length > 0) {
-            const productIds = orderItemsForLinking
-              .map((item: any) => item.shopify_product_id)
-              .filter(Boolean)
-
-            if (productIds.length > 0) {
-              // Find containers that have these products
-              // First get products with matching shopify_product_id
-              const { data: matchingProducts } = await supabase
-                .from('products')
-                .select('id, shopify_product_id')
-                .in('shopify_product_id', productIds)
-
-              if (matchingProducts && matchingProducts.length > 0) {
-                const productDbIds = matchingProducts.map((p: any) => p.id)
-                
-                // Then find containers with these products
-                const { data: containerProducts } = await supabase
-                  .from('container_products')
-                  .select('container_id, product_id')
-                  .in('product_id', productDbIds)
-
-                if (containerProducts && containerProducts.length > 0) {
-                  // Group by container_id to find which container has the most matching products
-                  const containerMatches: Record<string, number> = {}
-                  containerProducts.forEach((cp: any) => {
-                    const containerId = cp.container_id
-                    if (containerId) {
-                      containerMatches[containerId] = (containerMatches[containerId] || 0) + 1
-                    }
-                  })
-
-                  // Find container with most matches
-                  const bestMatch = Object.entries(containerMatches).sort((a, b) => b[1] - a[1])[0]
-                  
-                  if (bestMatch) {
-                    const [containerId, matchCount] = bestMatch
-                    
-                    // Get container ETA
-                    const { data: container } = await supabase
-                      .from('containers')
-                      .select('id, eta')
-                      .eq('id', containerId)
-                      .single()
-
-                    if (container) {
-                      // Link order to container
-                      const { error: linkError } = await supabase
-                        .from('orders')
-                        .update({
-                          container_id: containerId,
-                          delivery_eta: container.eta,
-                        })
-                        .eq('id', order.id)
-
-                      if (!linkError) {
-                        console.log(`✅ Auto-linked order to container ${containerId} (${matchCount} product(s) matched)`)
-                      } else {
-                        console.warn('⚠️ Failed to auto-link order:', linkError)
-                      }
-                    }
-                  }
-                }
-              }
+        // Auto-allocate order using FIFO rules (after items are created)
+        if (order?.id) {
+          try {
+            const { allocateOrderToContainer } = await import('@/lib/order-allocation')
+            const allocation = await allocateOrderToContainer(order.id)
+            
+            if (allocation) {
+              // Update order with container assignment
+              await supabase
+                .from('orders')
+                .update({
+                  container_id: allocation.containerId,
+                  delivery_eta: allocation.eta,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('id', order.id)
+              
+              console.log(`✅ Auto-allocated order ${shopifyOrder.order_number} to container using FIFO`)
+            } else {
+              console.log(`ℹ️ Order ${shopifyOrder.order_number} could not be auto-allocated - no available container`)
             }
+          } catch (allocError) {
+            // Non-critical - log but don't fail
+            console.warn('Auto-allocation failed (non-critical):', allocError)
           }
-        } catch (autoLinkError: any) {
-          console.warn('⚠️ Auto-linking failed (non-critical):', autoLinkError.message)
-          // Don't fail the webhook if auto-linking fails
         }
       }
     }
