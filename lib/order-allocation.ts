@@ -59,16 +59,24 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
     }
 
     // 2. Get all non-delivered containers sorted by ETA
+    // CRITICAL: Exclude delivered containers - they should not receive new orders
     const { data: containers, error: containersError } = await supabase
       .from('containers')
       .select('id, container_id, eta, status')
       .neq('status', 'delivered')
-      .order('eta', { ascending: true, nullsFirst: false })
-
+    
     if (containersError || !containers) {
       console.error('Error fetching containers:', containersError)
       return null
     }
+    
+    // Sort containers by ETA (earliest first) - same logic as Slim toewijzen
+    // Containers without ETA go to the end (Infinity)
+    const sortedContainers = (containers || []).sort((a: any, b: any) => {
+      const aDate = a.eta ? new Date(a.eta).getTime() : Infinity
+      const bDate = b.eta ? new Date(b.eta).getTime() : Infinity
+      return aDate - bDate // Ascending: earliest date first (strict FIFO)
+    })
 
     // 3. Get container products
     const { data: containerProducts, error: cpError } = await supabase
@@ -86,7 +94,7 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
 
     // 4. Build container inventory
     const containerInventory: Record<string, Record<string, number>> = {}
-    containers.forEach((c: any) => {
+    sortedContainers.forEach((c: any) => {
       containerInventory[c.id] = {}
     })
 
@@ -136,7 +144,8 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
     }
 
     // 6. Find first container (by ETA) that can fulfill the order
-    for (const container of containers) {
+    // CRITICAL: Iterate in ETA order (earliest first) - strict FIFO
+    for (const container of sortedContainers) {
       const inventory = containerInventory[container.id]
       if (!inventory) continue
 
