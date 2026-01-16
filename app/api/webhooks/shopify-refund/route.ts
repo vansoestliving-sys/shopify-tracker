@@ -37,7 +37,10 @@ export async function POST(request: NextRequest) {
       refundDetails: refunds.map((r: any) => ({
         restock: r.restock,
         restockType: r.refund_line_items?.[0]?.restock_type,
+        allRestockTypes: r.refund_line_items?.map((item: any) => item.restock_type),
       })),
+      topic: topic,
+      shop: shop,
     })
 
     const supabase = createSupabaseAdminClient()
@@ -50,9 +53,25 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (findError || !existingOrder) {
-      console.log('ℹ️ Order not found in database, skipping:', order.id)
-      return NextResponse.json({ success: true, message: 'Order not found in database' })
+      console.log('⚠️ Order not found in database, skipping:', {
+        shopifyOrderId: order.id,
+        orderNumber: order.name,
+        error: findError?.message,
+      })
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Order not found in database',
+        shopifyOrderId: order.id,
+        orderNumber: order.name,
+      })
     }
+    
+    console.log('✅ Order found in database:', {
+      orderId: existingOrder.id,
+      orderNumber: order.name,
+      containerId: existingOrder.container_id,
+      createdAt: existingOrder.created_at,
+    })
 
     // Check if order is refunded or cancelled
     const isRefunded = order.financial_status === 'refunded'
@@ -78,12 +97,30 @@ export async function POST(request: NextRequest) {
 
     if (!isRefunded && !isCancelled) {
       console.log('ℹ️ Order is not refunded or cancelled, skipping')
+      console.log('📊 Order status:', {
+        financialStatus: order.financial_status,
+        cancelledAt: order.cancelled_at,
+        orderNumber: order.name,
+      })
       return NextResponse.json({ success: true, message: 'Order not refunded/cancelled' })
     }
 
     if (!shouldRestock) {
-      console.log('ℹ️ Restock not checked, skipping (items not going back to stock)')
-      return NextResponse.json({ success: true, message: 'Restock not checked, skipping' })
+      console.log('⚠️ Restock not checked - order will NOT be deleted')
+      console.log('📊 Refund details:', {
+        orderNumber: order.name,
+        refunds: refunds.length,
+        restockFlags: refunds.map((r: any) => ({
+          restock: r.restock,
+          restockTypes: r.refund_line_items?.map((item: any) => item.restock_type),
+        })),
+      })
+      console.log('💡 IMPORTANT: To delete order from portal, you must check "Restock items" when refunding in Shopify')
+      return NextResponse.json({ 
+        success: true, 
+        message: 'Restock not checked, skipping',
+        note: 'Order will remain in portal. To delete, refund again with "Restock items" checked.'
+      })
     }
 
     // Calculate total refunded amount to determine if full or partial
