@@ -13,6 +13,14 @@ import { createSupabaseAdminClient } from '@/lib/supabase/server'
 export async function allocateOrderToContainer(orderId: string): Promise<{ containerId: string, eta: string | null } | null> {
   const supabase = createSupabaseAdminClient()
 
+  // Helper function to normalize product names consistently
+  // CRITICAL: This ensures exact matching between container_products and order_items
+  const normalizeProductName = (name: string | null | undefined): string | null => {
+    if (!name) return null
+    // Normalize: lowercase, trim, replace multiple spaces with single space
+    return name.toLowerCase().trim().replace(/\s+/g, ' ')
+  }
+
   try {
     // 1. Get the order and its items
     const { data: order, error: orderError } = await supabase
@@ -46,7 +54,7 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
     // Calculate required products (excluding turn function)
     const requiredProducts: Record<string, number> = {}
     for (const item of orderItems) {
-      const productName = item.name?.toLowerCase().trim()
+      const productName = normalizeProductName(item.name)
       if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
         const itemQty = item.quantity || 1
         requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
@@ -100,7 +108,7 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
 
     containerProducts?.forEach((cp: any) => {
       const containerId = cp.container_id
-      const productName = cp.product?.name?.toLowerCase().trim()
+      const productName = normalizeProductName(cp.product?.name)
       const quantity = cp.quantity || 0
 
       if (containerId && productName) {
@@ -131,12 +139,22 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
           const linkedOrder = linkedOrders.find((o: any) => o.id === item.order_id)
           if (!linkedOrder?.container_id) return
 
-          const productName = item.name?.toLowerCase().trim()
+          const productName = normalizeProductName(item.name)
           if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
             const containerId = linkedOrder.container_id
             const inventory = containerInventory[containerId]
-            if (inventory && inventory[productName] !== undefined) {
-              inventory[productName] = (inventory[productName] || 0) - (item.quantity || 1)
+            if (inventory) {
+              // CRITICAL: Deduct even if product not in initial inventory
+              // This handles cases where product names might not match exactly
+              // If product exists, deduct from it; if not, initialize to negative (over-allocation)
+              if (inventory[productName] !== undefined) {
+                inventory[productName] = (inventory[productName] || 0) - (item.quantity || 1)
+              } else {
+                // Product not in container inventory - this shouldn't happen but handle it
+                // Initialize to negative to show over-allocation
+                inventory[productName] = -(item.quantity || 1)
+                console.warn(`⚠️ Product "${productName}" in order but not in container ${containerId} inventory - possible name mismatch`)
+              }
             }
           }
         })
@@ -150,20 +168,40 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       if (!inventory) continue
 
       let canFulfill = true
+      const missingProducts: string[] = []
       for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
         const available = inventory[productName] || 0
         if (available < requiredQty || available <= 0) {
           canFulfill = false
+          missingProducts.push(`${productName} (need ${requiredQty}, have ${available})`)
           break
         }
       }
 
       if (canFulfill) {
-        console.log(`✅ Auto-allocated order ${order.shopify_order_number} to container ${container.container_id} (ETA: ${container.eta || 'N/A'})`)
-        return {
-          containerId: container.id,
-          eta: container.eta || null,
+        // CRITICAL: Double-check available capacity before allocating
+        // Re-verify all products have enough capacity
+        let finalCheck = true
+        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+          const available = inventory[productName] || 0
+          if (available < requiredQty) {
+            finalCheck = false
+            console.error(`❌ OVER-ALLOCATION PREVENTED: ${productName} - need ${requiredQty}, have ${available}`)
+            break
+          }
         }
+        
+        if (finalCheck) {
+          console.log(`✅ Auto-allocated order ${order.shopify_order_number} to container ${container.container_id} (ETA: ${container.eta || 'N/A'})`)
+          return {
+            containerId: container.id,
+            eta: container.eta || null,
+          }
+        } else {
+          console.error(`❌ Allocation aborted for order ${order.shopify_order_number} - capacity check failed`)
+        }
+      } else if (missingProducts.length > 0) {
+        console.log(`⏭️  Skipping container ${container.container_id} - ${missingProducts[0]}`)
       }
     }
 

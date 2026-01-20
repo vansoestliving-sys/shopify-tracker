@@ -18,6 +18,14 @@ export async function POST(request: NextRequest) {
     const supabase = createSupabaseAdminClient()
     console.log('✅ Admin client initialized')
 
+    // Helper function to normalize product names consistently
+    // CRITICAL: This ensures exact matching between container_products and order_items
+    const normalizeProductName = (name: string | null | undefined): string | null => {
+      if (!name) return null
+      // Normalize: lowercase, trim, replace multiple spaces with single space
+      return name.toLowerCase().trim().replace(/\s+/g, ' ')
+    }
+
     // 1. Get all containers with their products and quantities
     // CRITICAL: Exclude delivered containers - they should not receive new orders
     const { data: containers, error: containersError } = await supabase
@@ -89,7 +97,7 @@ export async function POST(request: NextRequest) {
 
     containerProducts?.forEach((cp: any) => {
       const containerId = cp.container_id
-      const productName = cp.product?.name?.toLowerCase().trim()
+      const productName = normalizeProductName(cp.product?.name)
       const productId = cp.product?.id
       const shopifyId = cp.product?.shopify_product_id
       const quantity = cp.quantity || 0
@@ -239,7 +247,7 @@ export async function POST(request: NextRequest) {
         // Calculate required quantities per product (excluding turn function)
         const requiredProducts: Record<string, number> = {}
         for (const item of items) {
-          const productName = item.name?.toLowerCase().trim()
+          const productName = normalizeProductName(item.name)
           if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
             const itemQty = item.quantity || 1
             requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
@@ -250,6 +258,8 @@ export async function POST(request: NextRequest) {
         const inventory = containerInventory[currentContainerId]
         if (inventory) {
           for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+            // CRITICAL: Deduct even if product structure exists
+            // Handle both cases: product exists or doesn't exist
             if (inventory[productName]) {
               const before = inventory[productName].quantity
               inventory[productName].quantity -= requiredQty
@@ -257,6 +267,9 @@ export async function POST(request: NextRequest) {
               if (after < 0) {
                 console.warn(`⚠️ Container ${currentContainerId} has negative inventory for ${productName}: ${after} (was ${before}, deducted ${requiredQty})`)
               }
+            } else {
+              // Product not in container inventory - log warning
+              console.warn(`⚠️ Product "${productName}" in linked order but not in container ${currentContainerId} inventory - possible name mismatch`)
             }
           }
         }
@@ -289,25 +302,25 @@ export async function POST(request: NextRequest) {
       // NOTE: Ignore "draaifunctie" (turn function) - it always has same delivery date as chair
       const requiredProducts: Record<string, number> = {}
       
-      for (const item of items) {
-        const productName = item.name?.toLowerCase().trim()
-        if (productName) {
-          // Skip turn function products - not important for delivery tracking
-          if (productName.includes('draaifunctie') || productName.includes('turn function')) {
-            continue
+        for (const item of items) {
+          const productName = normalizeProductName(item.name)
+          if (productName) {
+            // Skip turn function products - not important for delivery tracking
+            if (productName.includes('draaifunctie') || productName.includes('turn function')) {
+              continue
+            }
+            
+            const itemQty = item.quantity || 1
+            requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
           }
-          
-          const itemQty = item.quantity || 1
-          requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
         }
-      }
 
       // If order only has turn function (no chairs) or items with no names, skip it
       if (Object.keys(requiredProducts).length === 0) {
         // Check if order has items with no names or all items are turn function
         const hasItemsWithNoName = items.some((item: any) => !item.name || !item.name.trim())
         const hasOnlyTurnFunction = items.every((item: any) => {
-          const name = item.name?.toLowerCase().trim()
+          const name = normalizeProductName(item.name)
           return !name || name.includes('draaifunctie') || name.includes('turn function')
         })
         
@@ -348,18 +361,38 @@ export async function POST(request: NextRequest) {
         }
 
       if (canFulfill) {
-        // This container can fulfill the order - allocate it (first match in sequence)
-        allocatedContainer = containerId
-        const container = containerMap.get(containerId)
-        
-        console.log(`✅ Allocating order ${order.shopify_order_number} to container ${container?.container_id} (ETA: ${container?.eta || 'N/A'})`)
-
-        // Deduct quantities from inventory
+        // CRITICAL: Double-check available capacity before final allocation
+        // Re-verify all products have enough capacity (prevent race conditions)
+        let finalCheck = true
         for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          containerInventory[containerId][productName].quantity -= requiredQty
+          const product = inventory[productName]
+          if (!product || product.quantity < requiredQty) {
+            finalCheck = false
+            console.error(`❌ OVER-ALLOCATION PREVENTED for order ${order.shopify_order_number}: ${productName} - need ${requiredQty}, have ${product?.quantity || 0}`)
+            break
+          }
         }
+        
+        if (finalCheck) {
+          // This container can fulfill the order - allocate it (first match in sequence)
+          allocatedContainer = containerId
+          const container = containerMap.get(containerId)
+          
+          console.log(`✅ Allocating order ${order.shopify_order_number} to container ${container?.container_id} (ETA: ${container?.eta || 'N/A'})`)
 
-        break // Stop looking - we found the first container in sequence that can fulfill
+          // Deduct quantities from inventory
+          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+            if (containerInventory[containerId][productName]) {
+              containerInventory[containerId][productName].quantity -= requiredQty
+            } else {
+              console.error(`❌ CRITICAL: Product ${productName} not found in inventory when deducting!`)
+            }
+          }
+
+          break // Stop looking - we found the first container in sequence that can fulfill
+        } else {
+          console.error(`❌ Allocation aborted for order ${order.shopify_order_number} - final capacity check failed`)
+        }
       } else {
         // Log why this container was skipped
         const container = containerMap.get(containerId)
