@@ -120,6 +120,7 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
     })
 
     // 5. Deduct quantities from already-linked orders
+    // CRITICAL: Must use pagination to avoid Supabase 1000-row limit
     const { data: linkedOrders, error: linkedError } = await supabase
       .from('orders')
       .select('id, container_id')
@@ -130,12 +131,45 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       const linkedOrderIds = linkedOrders.map((o: any) => o.id)
       
       if (linkedOrderIds.length > 0) {
-        const { data: linkedItems } = await supabase
-          .from('order_items')
-          .select('order_id, name, quantity')
-          .in('order_id', linkedOrderIds)
+        // CRITICAL: Fetch linked items with pagination to avoid 1000-row limit
+        // Same approach as bulk allocation route
+        let linkedItems: any[] = []
+        const batchSize = 500 // For IN clause limit
+        
+        for (let i = 0; i < linkedOrderIds.length; i += batchSize) {
+          const batch = linkedOrderIds.slice(i, i + batchSize)
+          
+          let batchItems: any[] = []
+          let offset = 0
+          const limit = 1000 // Supabase row limit
+          
+          while (true) {
+            const { data: items, error: itemsError } = await supabase
+              .from('order_items')
+              .select('order_id, name, quantity')
+              .in('order_id', batch)
+              .range(offset, offset + limit - 1)
 
-        linkedItems?.forEach((item: any) => {
+            if (itemsError) {
+              console.error('Error fetching linked order items:', itemsError)
+              break // Don't throw, just log and continue
+            }
+
+            if (!items || items.length === 0) break
+            
+            batchItems = [...batchItems, ...items]
+            
+            if (items.length < limit) break
+            
+            offset += limit
+          }
+          
+          linkedItems = [...linkedItems, ...batchItems]
+        }
+
+        console.log(`📊 Deducting ${linkedItems.length} linked order items from inventory`)
+
+        linkedItems.forEach((item: any) => {
           const linkedOrder = linkedOrders.find((o: any) => o.id === item.order_id)
           if (!linkedOrder?.container_id) return
 
@@ -192,7 +226,15 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
         }
         
         if (finalCheck) {
-          console.log(`✅ Auto-allocated order ${order.shopify_order_number} to container ${container.container_id} (ETA: ${container.eta || 'N/A'})`)
+          // CRITICAL: Log available inventory for debugging
+          const availableInventory: Record<string, number> = {}
+          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+            availableInventory[productName] = inventory[productName] || 0
+          }
+          console.log(`✅ Auto-allocated order ${order.shopify_order_number} to container ${container.container_id} (ETA: ${container.eta || 'N/A'})`, {
+            required: requiredProducts,
+            available: availableInventory,
+          })
           return {
             containerId: container.id,
             eta: container.eta || null,
