@@ -139,6 +139,11 @@ export default function ContainerInventoryPage() {
         .from('order_container_allocations')
         .select('container_id, product_name, quantity')
 
+      if (allocError) {
+        console.warn('Warning: Could not fetch split allocations:', allocError)
+        // Continue without split allocations - old-style allocations will still work
+      }
+
       // Build inventory with allocated quantities
       const inventoryData: ContainerInventory[] = (containers || []).map((container: any) => {
         const containerProds = ((containerProducts || []) as any[]).filter(
