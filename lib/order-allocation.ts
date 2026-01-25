@@ -1,16 +1,17 @@
 import { createSupabaseAdminClient } from '@/lib/supabase/server'
 
 /**
- * FIFO allocation helper: Automatically links a single order to the best container
+ * FIFO allocation helper: Automatically links a single order to containers (supports splitting)
  * Uses the same FIFO rules as "Slim toewijzen" but for a single order
  * 
  * CRITICAL FIFO RULES:
  * 1. Containers filled strictly by container_eta ASC (earliest first)
  * 2. Only assigns to non-delivered containers
- * 3. Checks available capacity (accounts for already-linked orders)
- * 4. Returns null if no container can fulfill the order
+ * 3. Checks available capacity (accounts for already-linked orders and allocations)
+ * 4. Supports splitting orders across multiple containers
+ * 5. Returns latest ETA when order is split
  */
-export async function allocateOrderToContainer(orderId: string): Promise<{ containerId: string, eta: string | null } | null> {
+export async function allocateOrderToContainer(orderId: string): Promise<{ containerId: string, eta: string | null, isSplit: boolean } | null> {
   const supabase = createSupabaseAdminClient()
 
   // Helper function to normalize product names consistently
@@ -34,9 +35,20 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       return null
     }
 
-    // Skip if already linked
-    if (order.container_id) {
-      console.log(`ℹ️ Order ${order.shopify_order_number} already linked, skipping`)
+    // Check if order already has allocations (split or single)
+    const { data: existingAllocations } = await supabase
+      .from('order_container_allocations')
+      .select('container_id')
+      .eq('order_id', orderId)
+
+    if (existingAllocations && existingAllocations.length > 0) {
+      console.log(`ℹ️ Order ${order.shopify_order_number} already has allocations, skipping`)
+      return null
+    }
+
+    // Also check old-style container_id linkage
+    if (order.container_id && (!existingAllocations || existingAllocations.length === 0)) {
+      console.log(`ℹ️ Order ${order.shopify_order_number} already linked (old style), skipping`)
       return null
     }
 
@@ -119,29 +131,26 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       }
     })
 
-    // 5. Deduct quantities from already-linked orders
-    // CRITICAL: Must use pagination to avoid Supabase 1000-row limit
+    // 5. Deduct quantities from already-linked orders (old style)
     const { data: linkedOrders, error: linkedError } = await supabase
       .from('orders')
       .select('id, container_id')
       .not('container_id', 'is', null)
-      .neq('id', orderId) // Exclude the current order
+      .neq('id', orderId)
 
     if (!linkedError && linkedOrders) {
       const linkedOrderIds = linkedOrders.map((o: any) => o.id)
       
       if (linkedOrderIds.length > 0) {
-        // CRITICAL: Fetch linked items with pagination to avoid 1000-row limit
-        // Same approach as bulk allocation route
         let linkedItems: any[] = []
-        const batchSize = 500 // For IN clause limit
+        const batchSize = 500
         
         for (let i = 0; i < linkedOrderIds.length; i += batchSize) {
           const batch = linkedOrderIds.slice(i, i + batchSize)
           
           let batchItems: any[] = []
           let offset = 0
-          const limit = 1000 // Supabase row limit
+          const limit = 1000
           
           while (true) {
             const { data: items, error: itemsError } = await supabase
@@ -152,7 +161,7 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
 
             if (itemsError) {
               console.error('Error fetching linked order items:', itemsError)
-              break // Don't throw, just log and continue
+              break
             }
 
             if (!items || items.length === 0) break
@@ -167,8 +176,6 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
           linkedItems = [...linkedItems, ...batchItems]
         }
 
-        console.log(`📊 Deducting ${linkedItems.length} linked order items from inventory`)
-
         linkedItems.forEach((item: any) => {
           const linkedOrder = linkedOrders.find((o: any) => o.id === item.order_id)
           if (!linkedOrder?.container_id) return
@@ -178,14 +185,9 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
             const containerId = linkedOrder.container_id
             const inventory = containerInventory[containerId]
             if (inventory) {
-              // CRITICAL: Deduct even if product not in initial inventory
-              // This handles cases where product names might not match exactly
-              // If product exists, deduct from it; if not, initialize to negative (over-allocation)
               if (inventory[productName] !== undefined) {
                 inventory[productName] = (inventory[productName] || 0) - (item.quantity || 1)
               } else {
-                // Product not in container inventory - this shouldn't happen but handle it
-                // Initialize to negative to show over-allocation
                 inventory[productName] = -(item.quantity || 1)
                 console.warn(`⚠️ Product "${productName}" in order but not in container ${containerId} inventory - possible name mismatch`)
               }
@@ -195,63 +197,160 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       }
     }
 
-    // 6. Find first container (by ETA) that can fulfill the order
-    // CRITICAL: Iterate in ETA order (earliest first) - strict FIFO
+    // 6. Deduct quantities from existing allocations (new split style)
+    const { data: allAllocations, error: allocError } = await supabase
+      .from('order_container_allocations')
+      .select('order_id, container_id, product_name, quantity')
+      .neq('order_id', orderId)
+
+    if (!allocError && allAllocations) {
+      // Get order items for allocated orders
+      const allocatedOrderIds = Array.from(new Set(allAllocations.map((a: any) => a.order_id)))
+      
+      if (allocatedOrderIds.length > 0) {
+        // For each allocation, deduct from the appropriate container
+        allAllocations.forEach((alloc: any) => {
+          const containerId = alloc.container_id
+          const productName = alloc.product_name
+          const quantity = alloc.quantity
+
+          const inventory = containerInventory[containerId]
+          if (inventory && inventory[productName] !== undefined) {
+            inventory[productName] = (inventory[productName] || 0) - quantity
+          }
+        })
+      }
+    }
+
+    // 7. Allocate order across containers (supports splitting)
+    // Track remaining quantities needed per product
+    const remainingProducts: Record<string, number> = { ...requiredProducts }
+    const allocations: Array<{ containerId: string, productName: string, quantity: number, eta: string | null }> = []
+    let latestEta: string | null = null
+    let latestContainerId: string | null = null
+
+    // Iterate through containers in FIFO order (earliest first)
     for (const container of sortedContainers) {
       const inventory = containerInventory[container.id]
       if (!inventory) continue
 
-      let canFulfill = true
-      const missingProducts: string[] = []
-      for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+      // Check what we can allocate from this container
+      let allocatedFromThisContainer = false
+
+      for (const [productName, remainingQty] of Object.entries(remainingProducts)) {
+        if (remainingQty <= 0) continue // Already fully allocated
+
         const available = inventory[productName] || 0
-        if (available < requiredQty || available <= 0) {
-          canFulfill = false
-          missingProducts.push(`${productName} (need ${requiredQty}, have ${available})`)
-          break
+        
+        if (available > 0) {
+          // Allocate as much as possible from this container
+          const allocateQty = Math.min(remainingQty, available)
+          
+          if (allocateQty > 0) {
+            allocations.push({
+              containerId: container.id,
+              productName,
+              quantity: allocateQty,
+              eta: container.eta || null,
+            })
+
+            // Update remaining quantity
+            remainingProducts[productName] -= allocateQty
+            
+            // Update inventory (for subsequent iterations)
+            inventory[productName] -= allocateQty
+
+            // Track latest ETA and container
+            if (container.eta) {
+              const containerDate = new Date(container.eta).getTime()
+              const currentLatest = latestEta ? new Date(latestEta).getTime() : 0
+              if (containerDate > currentLatest) {
+                latestEta = container.eta
+                latestContainerId = container.id
+              }
+            }
+
+            allocatedFromThisContainer = true
+          }
         }
       }
 
-      if (canFulfill) {
-        // CRITICAL: Double-check available capacity before allocating
-        // Re-verify all products have enough capacity
-        let finalCheck = true
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          const available = inventory[productName] || 0
-          if (available < requiredQty) {
-            finalCheck = false
-            console.error(`❌ OVER-ALLOCATION PREVENTED: ${productName} - need ${requiredQty}, have ${available}`)
-            break
-          }
-        }
-        
-        if (finalCheck) {
-          // CRITICAL: Log available inventory for debugging
-          const availableInventory: Record<string, number> = {}
-          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-            availableInventory[productName] = inventory[productName] || 0
-          }
-          console.log(`✅ Auto-allocated order ${order.shopify_order_number} to container ${container.container_id} (ETA: ${container.eta || 'N/A'})`, {
-            required: requiredProducts,
-            available: availableInventory,
-          })
-          return {
-            containerId: container.id,
-            eta: container.eta || null,
-          }
-        } else {
-          console.error(`❌ Allocation aborted for order ${order.shopify_order_number} - capacity check failed`)
-        }
-      } else if (missingProducts.length > 0) {
-        console.log(`⏭️  Skipping container ${container.container_id} - ${missingProducts[0]}`)
+      // If we allocated from this container, log it
+      if (allocatedFromThisContainer) {
+        console.log(`📦 Allocated from container ${container.container_id} (ETA: ${container.eta || 'N/A'})`)
+      }
+
+      // Check if all products are fully allocated
+      const allAllocated = Object.values(remainingProducts).every(qty => qty <= 0)
+      if (allAllocated) {
+        break // All products allocated, stop looking
       }
     }
 
-    console.log(`⚠️ No container available for order ${order.shopify_order_number}`)
-    return null
+    // Check if we successfully allocated all products
+    const allAllocated = Object.values(remainingProducts).every(qty => qty <= 0)
+
+    if (!allAllocated) {
+      const unallocated = Object.entries(remainingProducts)
+        .filter(([_, qty]) => qty > 0)
+        .map(([name, qty]) => `${name} (${qty} remaining)`)
+      console.log(`⚠️ Could not fully allocate order ${order.shopify_order_number}. Unallocated: ${unallocated.join(', ')}`)
+      return null
+    }
+
+    if (allocations.length === 0) {
+      console.log(`⚠️ No allocations created for order ${order.shopify_order_number}`)
+      return null
+    }
+
+    // 8. Save allocations to database
+    const allocationsToInsert = allocations.map(alloc => ({
+      order_id: orderId,
+      container_id: alloc.containerId,
+      product_name: alloc.productName,
+      quantity: alloc.quantity,
+    }))
+
+    const { error: insertError } = await supabase
+      .from('order_container_allocations')
+      .insert(allocationsToInsert)
+
+    if (insertError) {
+      console.error('Error inserting allocations:', insertError)
+      return null
+    }
+
+    // 9. Update order with container_id (latest container for backward compatibility) and delivery_eta
+    // The database trigger will also update delivery_eta, but we set it here explicitly
+    const { error: updateError } = await supabase
+      .from('orders')
+      .update({
+        container_id: latestContainerId, // Latest container for backward compatibility
+        delivery_eta: latestEta,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', orderId)
+
+    if (updateError) {
+      console.error('Error updating order:', updateError)
+      // Don't fail - allocations are already saved
+    }
+
+    const isSplit = allocations.length > 1 || new Set(allocations.map(a => a.containerId)).size > 1
+
+    console.log(`✅ Allocated order ${order.shopify_order_number} ${isSplit ? 'SPLIT' : ''} across ${new Set(allocations.map(a => a.containerId)).size} container(s)`, {
+      allocations: allocations.length,
+      containers: new Set(allocations.map(a => a.containerId)).size,
+      latestEta,
+    })
+
+    return {
+      containerId: latestContainerId || allocations[0].containerId,
+      eta: latestEta,
+      isSplit,
+    }
   } catch (error: any) {
     console.error('Error in allocateOrderToContainer:', error)
     return null
   }
 }
-

@@ -187,11 +187,27 @@ export async function POST(
       })
     }
 
+    // Check for existing allocations (split orders)
+    const { data: existingAllocations } = await supabase
+      .from('order_container_allocations')
+      .select('order_id')
+      .in('order_id', uniqueOrderIds)
+
+    const ordersWithAllocations = new Set(
+      (existingAllocations || []).map((a: any) => a.order_id)
+    )
+
     // For each order, find which container has the MOST matching products
     const ordersToLink: string[] = []
     const skippedOrders: { orderId: string, reason: string }[] = []
     
     for (const order of orders) {
+      // Skip if order already has allocations (split order)
+      if (ordersWithAllocations.has(order.id)) {
+        skippedOrders.push({ orderId: order.id, reason: 'already_allocated' })
+        continue
+      }
+
       // Skip if already linked to a different container
       if (order.container_id && order.container_id !== params.id) {
         skippedOrders.push({ orderId: order.id, reason: 'already_linked' })

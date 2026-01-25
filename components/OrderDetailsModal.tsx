@@ -20,6 +20,17 @@ interface OrderDetails {
     eta: string
     status: string
   } | null
+  allocations?: Array<{
+    id: string
+    container_id: string
+    product_name: string
+    quantity: number
+    container?: {
+      container_id: string
+      eta: string
+      status: string
+    }
+  }>
   items?: Array<{
     name: string
     quantity: number
@@ -149,8 +160,34 @@ export default function OrderDetailsModal({ order, onClose }: OrderDetailsModalP
             )}
           </div>
 
-          {/* Container Info */}
-          {orderDetails.container && (
+          {/* Container Info - Show split allocations if available */}
+          {(orderDetails.allocations && orderDetails.allocations.length > 0) ? (
+            <div className="glass-card rounded-xl p-4">
+              <h5 className="font-semibold text-gray-900 mb-3 flex items-center">
+                <Truck className="w-4 h-4 mr-2 text-primary-400" />
+                Container Allocation {orderDetails.allocations.length > 1 && <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">SPLIT</span>}
+              </h5>
+              <div className="space-y-3">
+                {orderDetails.allocations.map((alloc: any, idx: number) => (
+                  <div key={idx} className="border-l-2 border-primary-300 pl-3 py-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-semibold text-gray-900">
+                        {alloc.container?.container_id || 'Unknown Container'}
+                      </p>
+                      {alloc.container?.eta && (
+                        <p className="text-xs text-gray-500">
+                          ETA: {formatDate(alloc.container.eta)}
+                        </p>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      {alloc.product_name}: {alloc.quantity} pcs
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : orderDetails.container ? (
             <div className="glass-card rounded-xl p-4">
               <h5 className="font-semibold text-gray-900 mb-3 flex items-center">
                 <Truck className="w-4 h-4 mr-2 text-primary-400" />
@@ -169,7 +206,7 @@ export default function OrderDetailsModal({ order, onClose }: OrderDetailsModalP
                 </div>
               </div>
             </div>
-          )}
+          ) : null}
 
           {/* Delivery ETA */}
           <div className="flex items-start space-x-3">

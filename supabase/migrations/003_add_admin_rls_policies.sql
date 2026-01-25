@@ -67,3 +67,14 @@ CREATE POLICY "Authenticated users can manage customers"
   TO authenticated
   USING (true);
 
+-- Allow authenticated users to read order_container_allocations
+CREATE POLICY "Authenticated users can view order_container_allocations"
+  ON order_container_allocations FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Authenticated users can manage order_container_allocations"
+  ON order_container_allocations FOR ALL
+  TO authenticated
+  USING (true);
+

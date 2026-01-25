@@ -28,6 +28,25 @@ export async function GET(
 
     if (error) throw error
 
+    // Fetch allocations if order has them (split orders)
+    const { data: allocations } = await supabase
+      .from('order_container_allocations')
+      .select(`
+        *,
+        container:containers (
+          id,
+          container_id,
+          eta,
+          status
+        )
+      `)
+      .eq('order_id', params.id)
+
+    // Add allocations to order object
+    if (order && allocations) {
+      (order as any).allocations = allocations
+    }
+
     return NextResponse.json({ order })
   } catch (error: any) {
     console.error('Error fetching order:', error)

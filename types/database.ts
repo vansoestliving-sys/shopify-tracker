@@ -68,9 +68,20 @@ export interface OrderItem {
   created_at: string
 }
 
+export interface OrderContainerAllocation {
+  id: string
+  order_id: string
+  container_id: string
+  product_name: string
+  quantity: number
+  created_at: string
+  updated_at: string
+}
+
 export interface OrderWithDetails extends Order {
   container: Container | null
   customer: Customer | null
   items: OrderItem[]
+  allocations?: OrderContainerAllocation[] // Split allocations across containers
 }
 

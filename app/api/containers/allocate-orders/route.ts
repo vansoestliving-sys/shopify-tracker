@@ -278,9 +278,36 @@ export async function POST(request: NextRequest) {
       console.log(`📊 Deducted ${linkedOrders.length} linked orders from inventory`)
     }
 
+    // 5.6. Deduct quantities from existing split allocations
+    // CRITICAL: Also account for orders that are split across containers
+    const { data: existingAllocations, error: allocError } = await supabase
+      .from('order_container_allocations')
+      .select('order_id, container_id, product_name, quantity')
+
+    if (!allocError && existingAllocations && existingAllocations.length > 0) {
+      // Deduct each allocation from the appropriate container
+      for (const alloc of existingAllocations) {
+        const containerId = alloc.container_id
+        const productName = alloc.product_name
+        const quantity = alloc.quantity
+
+        const inventory = containerInventory[containerId]
+        if (inventory && inventory[productName]) {
+          const before = inventory[productName].quantity
+          inventory[productName].quantity -= quantity
+          const after = inventory[productName].quantity
+          if (after < 0) {
+            console.warn(`⚠️ Container ${containerId} has negative inventory for ${productName}: ${after} (was ${before}, deducted ${quantity} from allocation)`)
+          }
+        }
+      }
+      
+      console.log(`📊 Deducted ${existingAllocations.length} existing allocations from inventory`)
+    }
+
     // 6. Allocate ONLY unlinked orders to containers based on available quantities
     // CRITICAL: Linked orders are FROZEN and must never be processed here
-    const allocations: { orderId: string, containerId: string, eta: string | null }[] = []
+    const allocations: { orderId: string, containerId: string, eta: string | null, allocations?: Array<{ containerId: string, productName: string, quantity: number, eta: string | null }> }[] = []
     const skipped: { orderId: string, orderNumber: string, reason: string, productsNeeded?: string }[] = []
     const containerMap = new Map(sortedContainers.map((c: any) => [c.id, c]))
 
@@ -338,94 +365,108 @@ export async function POST(request: NextRequest) {
         continue
       }
 
-      // Find the FIRST container (in ETA order) that has enough stock for ALL products
-      // CRITICAL: This ensures strict FIFO - containers are never skipped if capacity exists
-      // We iterate through containers in ETA order (earliest first) and take the first match
-      let allocatedContainer: string | null = null
+      // Allocate order across containers (supports splitting)
+      // Track remaining quantities needed per product
+      const remainingProducts: Record<string, number> = { ...requiredProducts }
+      const orderAllocations: Array<{ containerId: string, productName: string, quantity: number, eta: string | null }> = []
+      let latestEta: string | null = null
+      let latestContainerId: string | null = null
 
+      // Iterate through containers in FIFO order (earliest first)
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
-        if (!inventory) continue // Skip if container has no inventory data
-        
-        // Check if container has enough of ALL products (excluding turn function)
-        // CRITICAL: Available must be >= required, and must be > 0 (not full)
-        let canFulfill = true
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
+        if (!inventory) continue
+
+        const container = containerMap.get(containerId)
+        if (!container) continue
+
+        // Check what we can allocate from this container
+        let allocatedFromThisContainer = false
+
+        for (const [productName, remainingQty] of Object.entries(remainingProducts)) {
+          if (remainingQty <= 0) continue // Already fully allocated
+
           const available = inventory[productName]?.quantity || 0
           
-          // Must have enough AND must be positive (not already full/over-allocated)
-          if (available < requiredQty || available <= 0) {
-            canFulfill = false
-            break
-          }
-        }
+          if (available > 0) {
+            // Allocate as much as possible from this container
+            const allocateQty = Math.min(remainingQty, available)
+            
+            if (allocateQty > 0) {
+              orderAllocations.push({
+                containerId,
+                productName,
+                quantity: allocateQty,
+                eta: container.eta || null,
+              })
 
-      if (canFulfill) {
-        // CRITICAL: Double-check available capacity before final allocation
-        // Re-verify all products have enough capacity (prevent race conditions)
-        let finalCheck = true
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          const product = inventory[productName]
-          if (!product || product.quantity < requiredQty) {
-            finalCheck = false
-            console.error(`❌ OVER-ALLOCATION PREVENTED for order ${order.shopify_order_number}: ${productName} - need ${requiredQty}, have ${product?.quantity || 0}`)
-            break
-          }
-        }
-        
-        if (finalCheck) {
-          // This container can fulfill the order - allocate it (first match in sequence)
-          allocatedContainer = containerId
-          const container = containerMap.get(containerId)
-          
-          console.log(`✅ Allocating order ${order.shopify_order_number} to container ${container?.container_id} (ETA: ${container?.eta || 'N/A'})`)
+              // Update remaining quantity
+              remainingProducts[productName] -= allocateQty
+              
+              // Update inventory (for subsequent iterations)
+              if (containerInventory[containerId][productName]) {
+                containerInventory[containerId][productName].quantity -= allocateQty
+              }
 
-          // Deduct quantities from inventory
-          for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-            if (containerInventory[containerId][productName]) {
-              containerInventory[containerId][productName].quantity -= requiredQty
-            } else {
-              console.error(`❌ CRITICAL: Product ${productName} not found in inventory when deducting!`)
+              // Track latest ETA and container
+              if (container.eta) {
+                const containerDate = new Date(container.eta).getTime()
+                const currentLatest = latestEta ? new Date(latestEta).getTime() : 0
+                if (containerDate > currentLatest) {
+                  latestEta = container.eta
+                  latestContainerId = containerId
+                }
+              }
+
+              allocatedFromThisContainer = true
             }
           }
+        }
 
-          break // Stop looking - we found the first container in sequence that can fulfill
-        } else {
-          console.error(`❌ Allocation aborted for order ${order.shopify_order_number} - final capacity check failed`)
-        }
-      } else {
-        // Log why this container was skipped
-        const container = containerMap.get(containerId)
-        const missingProducts: string[] = []
-        for (const [productName, requiredQty] of Object.entries(requiredProducts)) {
-          const available = containerInventory[containerId]?.[productName]?.quantity || 0
-          if (available < requiredQty) {
-            missingProducts.push(`${productName} (need ${requiredQty}, have ${available})`)
-          }
-        }
-        if (missingProducts.length > 0) {
-          console.log(`⏭️  Skipping container ${container?.container_id} (ETA: ${container?.eta || 'N/A'}) - insufficient: ${missingProducts.join(', ')}`)
+        // Check if all products are fully allocated
+        const allAllocated = Object.values(remainingProducts).every(qty => qty <= 0)
+        if (allAllocated) {
+          break // All products allocated, stop looking
         }
       }
-      }
 
-      if (allocatedContainer) {
-        const container = containerMap.get(allocatedContainer)
-        allocations.push({
-          orderId: order.id,
-          containerId: allocatedContainer,
-          eta: container?.eta || null,
-        })
-      } else {
-        // Log why this order was skipped
-        const productsNeeded = Object.keys(requiredProducts).length > 0 
-          ? Object.keys(requiredProducts).join(', ')
-          : 'No valid products found'
+      // Check if we successfully allocated all products
+      const allAllocated = Object.values(remainingProducts).every(qty => qty <= 0)
+
+      if (!allAllocated) {
+        const unallocated = Object.entries(remainingProducts)
+          .filter(([_, qty]) => qty > 0)
+          .map(([name, qty]) => `${name} (${qty} remaining)`)
+        const productsNeeded = unallocated.join(', ')
         skipped.push({
           orderId: order.id,
           orderNumber: order.shopify_order_number,
           reason: 'insufficient_stock',
           productsNeeded,
+        })
+        console.log(`⚠️ Could not fully allocate order ${order.shopify_order_number}. Unallocated: ${productsNeeded}`)
+      } else if (orderAllocations.length > 0) {
+        // Store allocations for this order
+        allocations.push({
+          orderId: order.id,
+          containerId: latestContainerId || orderAllocations[0].containerId,
+          eta: latestEta,
+          allocations: orderAllocations, // Store detailed allocations
+        })
+
+        const isSplit = orderAllocations.length > 1 || new Set(orderAllocations.map(a => a.containerId)).size > 1
+        const containerCount = new Set(orderAllocations.map(a => a.containerId)).size
+        console.log(`✅ Allocated order ${order.shopify_order_number} ${isSplit ? 'SPLIT' : ''} across ${containerCount} container(s)`, {
+          allocations: orderAllocations.length,
+          containers: containerCount,
+          latestEta,
+        })
+      } else {
+        skipped.push({
+          orderId: order.id,
+          orderNumber: order.shopify_order_number,
+          reason: 'insufficient_stock',
+          productsNeeded: Object.keys(requiredProducts).join(', '),
         })
       }
     }
@@ -458,9 +499,66 @@ export async function POST(request: NextRequest) {
       sampleSkipped: skipped.slice(0, 5),
     })
 
-    // 7. Update orders in the database
+    // 7. Save allocations to database and update orders
     if (allocations.length > 0) {
-      // Update in batches of 100
+      // First, insert all allocations into order_container_allocations table
+      const allAllocationsToInsert: Array<{ order_id: string, container_id: string, product_name: string, quantity: number }> = []
+      
+      for (const allocation of allocations) {
+        if (allocation.allocations && allocation.allocations.length > 0) {
+          // Split allocation - save detailed allocations
+          for (const detail of allocation.allocations) {
+            allAllocationsToInsert.push({
+              order_id: allocation.orderId,
+              container_id: detail.containerId,
+              product_name: detail.productName,
+              quantity: detail.quantity,
+            })
+          }
+        } else {
+          // Single container allocation - convert to allocation format
+          // This handles backward compatibility for orders that fit in one container
+          // We need to get the order's products to create allocations
+          const orderItems = orderItemsMap[allocation.orderId] || []
+          const requiredProducts: Record<string, number> = {}
+          
+          for (const item of orderItems) {
+            const productName = normalizeProductName(item.name)
+            if (productName && !productName.includes('draaifunctie') && !productName.includes('turn function')) {
+              const itemQty = item.quantity || 1
+              requiredProducts[productName] = (requiredProducts[productName] || 0) + itemQty
+            }
+          }
+
+          // Create allocations for all products in this order
+          for (const [productName, quantity] of Object.entries(requiredProducts)) {
+            allAllocationsToInsert.push({
+              order_id: allocation.orderId,
+              container_id: allocation.containerId,
+              product_name: productName,
+              quantity: quantity,
+            })
+          }
+        }
+      }
+
+      // Insert allocations in batches
+      if (allAllocationsToInsert.length > 0) {
+        const batchSize = 500
+        for (let i = 0; i < allAllocationsToInsert.length; i += batchSize) {
+          const batch = allAllocationsToInsert.slice(i, i + batchSize)
+          const { error: insertError } = await supabase
+            .from('order_container_allocations')
+            .insert(batch)
+
+          if (insertError) {
+            console.error('Error inserting allocations:', insertError)
+          }
+        }
+      }
+
+      // Update orders with container_id (latest container) and delivery_eta
+      // The database trigger will also update delivery_eta, but we set it here explicitly
       const batchSize = 100
       for (let i = 0; i < allocations.length; i += batchSize) {
         const batch = allocations.slice(i, i + batchSize)
@@ -469,7 +567,7 @@ export async function POST(request: NextRequest) {
           const { error: updateError } = await supabase
             .from('orders')
             .update({
-              container_id: allocation.containerId,
+              container_id: allocation.containerId, // Latest container for backward compatibility
               delivery_eta: allocation.eta,
               updated_at: new Date().toISOString(),
             })
