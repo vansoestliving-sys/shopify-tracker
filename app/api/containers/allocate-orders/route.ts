@@ -95,12 +95,21 @@ export async function POST(request: NextRequest) {
       orderedContainerIds.push(c.id)
     })
 
+    // Find LX1456-2 for debugging
+    const lx1456_2 = sortedContainers.find((c: any) => c.container_id === 'LX1456-2')
+    const lx1456_2_id = lx1456_2?.id
+    
     containerProducts?.forEach((cp: any) => {
       const containerId = cp.container_id
       const productName = normalizeProductName(cp.product?.name)
       const productId = cp.product?.id
       const shopifyId = cp.product?.shopify_product_id
       const quantity = cp.quantity || 0
+
+      // Debug logging for LX1456-2
+      if (containerId === lx1456_2_id) {
+        console.log(`🔍 LX1456-2 product: "${cp.product?.name}" -> normalized: "${productName}", quantity: ${quantity}`)
+      }
 
       if (containerId && productName && productId) {
         // Ensure container exists in inventory (should always exist after initialization above)
@@ -114,6 +123,11 @@ export async function POST(request: NextRequest) {
         }
       }
     })
+    
+    // Log final inventory for LX1456-2
+    if (lx1456_2_id && containerInventory[lx1456_2_id]) {
+      console.log(`🔍 LX1456-2 final inventory after loading:`, Object.keys(containerInventory[lx1456_2_id]).map(k => `${k}: ${containerInventory[lx1456_2_id][k].quantity}`))
+    }
 
     console.log('📦 Container inventory loaded:', {
       totalContainers: Object.keys(containerInventory).length,
@@ -285,6 +299,16 @@ export async function POST(request: NextRequest) {
       .select('order_id, container_id, product_name, quantity')
 
     if (!allocError && existingAllocations && existingAllocations.length > 0) {
+      // Find LX1456-2 container ID for debugging
+      const lx1456_2 = sortedContainers.find((c: any) => c.container_id === 'LX1456-2')
+      const lx1456_2_id = lx1456_2?.id
+      
+      // Log initial state of LX1456-2 before deductions
+      if (lx1456_2_id && containerInventory[lx1456_2_id]) {
+        const elenaBefore = containerInventory[lx1456_2_id]['eetkamerstoel elena']?.quantity || 0
+        console.log(`🔍 LX1456-2 Elena inventory BEFORE allocation deductions: ${elenaBefore}`)
+      }
+      
       // Deduct each allocation from the appropriate container
       for (const alloc of existingAllocations) {
         const containerId = alloc.container_id
@@ -296,10 +320,24 @@ export async function POST(request: NextRequest) {
           const before = inventory[productName].quantity
           inventory[productName].quantity -= quantity
           const after = inventory[productName].quantity
+          
+          // Log deductions for LX1456-2 Elena
+          if (containerId === lx1456_2_id && productName === 'eetkamerstoel elena') {
+            console.log(`📉 Deducting ${quantity} Elena from LX1456-2 (was ${before}, now ${after})`)
+          }
+          
           if (after < 0) {
             console.warn(`⚠️ Container ${containerId} has negative inventory for ${productName}: ${after} (was ${before}, deducted ${quantity} from allocation)`)
           }
+        } else if (containerId === lx1456_2_id && productName === 'eetkamerstoel elena') {
+          console.warn(`⚠️ LX1456-2: Product "${productName}" not found in inventory when deducting allocation`)
         }
+      }
+      
+      // Log final state of LX1456-2 after deductions
+      if (lx1456_2_id && containerInventory[lx1456_2_id]) {
+        const elenaAfter = containerInventory[lx1456_2_id]['eetkamerstoel elena']?.quantity || 0
+        console.log(`🔍 LX1456-2 Elena inventory AFTER allocation deductions: ${elenaAfter}`)
       }
       
       console.log(`📊 Deducted ${existingAllocations.length} existing allocations from inventory`)
