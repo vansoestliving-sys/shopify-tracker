@@ -103,7 +103,6 @@ export async function GET(request: NextRequest) {
     })
 
     // Log to verify we're getting fresh data from Supabase
-    const orderIds = orders?.map((o: any) => o.id) || []
     console.log(`📦 Fetched ${orders?.length || 0} orders directly from Supabase database`)
     console.log(`📋 Order IDs in database:`, orderIds.slice(0, 10))
     
