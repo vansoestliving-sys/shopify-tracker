@@ -390,6 +390,13 @@ export async function POST(request: NextRequest) {
 
           const available = inventory[productName]?.quantity || 0
           
+          // Debug: Log available products in this container
+          if (order.shopify_order_number === '1936' || order.shopify_order_number === '1937') {
+            const containerProducts = Object.keys(inventory).filter(k => inventory[k]?.quantity > 0)
+            console.log(`🔍 Container ${container.container_id} has products:`, containerProducts)
+            console.log(`🔍 Looking for "${productName}" in container ${container.container_id}, available: ${available}`)
+          }
+          
           if (available > 0) {
             // Allocate as much as possible from this container
             const allocateQty = Math.min(remainingQty, available)
