@@ -372,6 +372,8 @@ export async function POST(request: NextRequest) {
       let latestEta: string | null = null
       let latestContainerId: string | null = null
 
+      console.log(`🔍 Allocating order ${order.shopify_order_number} - Required products:`, requiredProducts)
+
       // Iterate through containers in FIFO order (earliest first)
       for (const containerId of orderedContainerIds) {
         const inventory = containerInventory[containerId]
@@ -393,6 +395,8 @@ export async function POST(request: NextRequest) {
             const allocateQty = Math.min(remainingQty, available)
             
             if (allocateQty > 0) {
+              console.log(`📦 Allocating ${allocateQty} of ${productName} from container ${container.container_id} (ETA: ${container.eta || 'N/A'}) for order ${order.shopify_order_number}`)
+              
               orderAllocations.push({
                 containerId,
                 productName,
@@ -420,6 +424,9 @@ export async function POST(request: NextRequest) {
 
               allocatedFromThisContainer = true
             }
+          } else {
+            // Log why we can't allocate from this container
+            console.log(`⏭️  Container ${container.container_id} has no ${productName} (need ${remainingQty}, have ${available})`)
           }
         }
 
