@@ -337,8 +337,10 @@ export default function ContainerInventoryPage() {
       )
 
       // Get orders that have allocations to this container but aren't directly linked
+      // This includes orders with container_id = NULL or container_id = different container
       let splitOrders: any[] = []
       if (allocatedOrderIds.size > 0) {
+        // Get all orders with allocations, then filter out ones directly linked to this container
         const { data: ordersWithAllocations, error: splitError } = await supabase
           .from('orders')
           .select(`
@@ -349,14 +351,19 @@ export default function ContainerInventoryPage() {
             delivery_eta,
             status,
             total_amount,
-            currency
+            currency,
+            container_id
           `)
           .in('id', Array.from(allocatedOrderIds))
-          .neq('container_id', containerId) // Only get orders not directly linked
           .order('created_at', { ascending: true })
 
         if (splitError) throw splitError
-        splitOrders = ordersWithAllocations || []
+        
+        // Filter to only include orders not directly linked to this container
+        // (includes NULL and different containers)
+        splitOrders = (ordersWithAllocations || []).filter(
+          (o: any) => o.container_id !== containerId
+        )
       }
 
       // Combine both direct and split orders, removing duplicates
@@ -590,6 +597,13 @@ export default function ContainerInventoryPage() {
                 </h2>
                 <p className="text-sm text-gray-500 mt-1">
                   {containerOrders.length} bestelling(en) gekoppeld
+                  {containerOrders.length > 0 && (
+                    <span className="ml-2">
+                      ({containerOrders.reduce((sum, order) => 
+                        sum + (order.items?.reduce((itemSum: number, item: any) => itemSum + (item.quantity || 0), 0) || 0), 0
+                      )} stuks totaal)
+                    </span>
+                  )}
                 </p>
               </div>
               <button
