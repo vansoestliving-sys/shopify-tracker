@@ -165,8 +165,15 @@ export default function ContainerInventoryPage() {
         )
 
         // Calculate allocated quantities per product from old-style linked orders
+        // CRITICAL: Exclude turn function items (draaifunctie) - same as allocation logic
         const allocated: Record<string, number> = {}
         containerOrderItems.forEach((item: any) => {
+          // Exclude turn function items from allocation count
+          const itemName = item.name?.toLowerCase() || ''
+          if (itemName.includes('draaifunctie') || itemName.includes('turn function')) {
+            return // Skip turn function items - they're not tracked for inventory
+          }
+          
           const productId = item.product_id
           if (productId) {
             allocated[productId] = (allocated[productId] || 0) + (item.quantity || 1)
