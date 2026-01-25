@@ -276,8 +276,9 @@ export default function ContainerInventoryPage() {
     setSelectedContainerId(containerId)
     setLoadingOrders(true)
     try {
-      // Fetch orders for this container
-      const { data: orders, error: ordersError } = await supabase
+      // Fetch orders for this container (both direct container_id and allocations)
+      // First, get orders directly linked to this container
+      const { data: directOrders, error: directError } = await supabase
         .from('orders')
         .select(`
           id,
@@ -292,7 +293,49 @@ export default function ContainerInventoryPage() {
         .eq('container_id', containerId)
         .order('created_at', { ascending: true })
 
-      if (ordersError) throw ordersError
+      if (directError) throw directError
+
+      // Also get orders that have allocations to this container (split orders)
+      const { data: allocations, error: allocError } = await supabase
+        .from('order_container_allocations')
+        .select('order_id')
+        .eq('container_id', containerId)
+
+      if (allocError) throw allocError
+
+      const allocatedOrderIds = new Set(
+        (allocations || []).map((a: any) => a.order_id)
+      )
+
+      // Get orders that have allocations to this container but aren't directly linked
+      let splitOrders: any[] = []
+      if (allocatedOrderIds.size > 0) {
+        const { data: ordersWithAllocations, error: splitError } = await supabase
+          .from('orders')
+          .select(`
+            id,
+            shopify_order_number,
+            customer_email,
+            customer_first_name,
+            delivery_eta,
+            status,
+            total_amount,
+            currency
+          `)
+          .in('id', Array.from(allocatedOrderIds))
+          .neq('container_id', containerId) // Only get orders not directly linked
+          .order('created_at', { ascending: true })
+
+        if (splitError) throw splitError
+        splitOrders = ordersWithAllocations || []
+      }
+
+      // Combine both direct and split orders, removing duplicates
+      const directOrderIds = new Set((directOrders || []).map((o: any) => o.id))
+      const orders = [
+        ...(directOrders || []),
+        ...splitOrders.filter((o: any) => !directOrderIds.has(o.id)) // Only add split orders not already in direct orders
+      ]
 
       // Fetch order items for these orders
       const orderIds = orders?.map((o: any) => o.id) || []

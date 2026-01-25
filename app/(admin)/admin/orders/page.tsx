@@ -22,6 +22,9 @@ interface Order {
   delivery_eta: string | null
   status: string
   container_id: string | null
+  has_allocations?: boolean
+  allocation_count?: number
+  container_count?: number
 }
 
 interface Container {
@@ -458,7 +461,14 @@ export default function OrdersPage() {
                           {order.customer_first_name || 'N/A'}
                         </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                        {container ? container.container_id : 'Not linked'}
+                        <div className="flex items-center gap-2">
+                          {container ? container.container_id : 'Not linked'}
+                          {order.has_allocations && order.container_count && order.container_count > 1 && (
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold" title={`Split across ${order.container_count} containers`}>
+                              SPLIT ({order.container_count})
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-700">
                         {formatDate(order.delivery_eta)}

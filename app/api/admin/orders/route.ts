@@ -65,6 +65,43 @@ export async function GET(request: NextRequest) {
       throw error
     }
 
+    // Fetch allocations for all orders to check if they're split
+    const orderIds = orders?.map((o: any) => o.id) || []
+    let allocationsMap: Record<string, any[]> = {}
+    
+    if (orderIds.length > 0) {
+      // Fetch in batches to avoid query limits
+      const batchSize = 500
+      for (let i = 0; i < orderIds.length; i += batchSize) {
+        const batch = orderIds.slice(i, i + batchSize)
+        const { data: allocations } = await supabase
+          .from('order_container_allocations')
+          .select('order_id, container_id')
+          .in('order_id', batch)
+        
+        if (allocations) {
+          allocations.forEach((alloc: any) => {
+            if (!allocationsMap[alloc.order_id]) {
+              allocationsMap[alloc.order_id] = []
+            }
+            allocationsMap[alloc.order_id].push(alloc)
+          })
+        }
+      }
+    }
+
+    // Add allocation info to orders
+    const ordersWithAllocations = orders?.map((order: any) => {
+      const allocations = allocationsMap[order.id] || []
+      const uniqueContainers = new Set(allocations.map((a: any) => a.container_id))
+      return {
+        ...order,
+        has_allocations: allocations.length > 0,
+        allocation_count: allocations.length,
+        container_count: uniqueContainers.size,
+      }
+    })
+
     // Log to verify we're getting fresh data from Supabase
     const orderIds = orders?.map((o: any) => o.id) || []
     console.log(`📦 Fetched ${orders?.length || 0} orders directly from Supabase database`)
@@ -84,7 +121,7 @@ export async function GET(request: NextRequest) {
     }
 
     const response = NextResponse.json({ 
-      orders: orders || [],
+      orders: ordersWithAllocations || orders || [],
       count: orders?.length || 0
     })
     
