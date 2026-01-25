@@ -133,6 +133,12 @@ export default function ContainerInventoryPage() {
         }
       }
 
+      // Get split allocations (order_container_allocations)
+      // These track partial allocations when orders are split across containers
+      const { data: splitAllocations, error: allocError } = await supabase
+        .from('order_container_allocations')
+        .select('container_id, product_name, quantity')
+
       // Build inventory with allocated quantities
       const inventoryData: ContainerInventory[] = (containers || []).map((container: any) => {
         const containerProds = ((containerProducts || []) as any[]).filter(
@@ -142,18 +148,18 @@ export default function ContainerInventoryPage() {
           product: Array.isArray(cp.product) ? cp.product[0] : cp.product,
         }))
 
-        // Get orders linked to this container
+        // Get orders linked to this container (old style - via container_id)
         const containerOrders = (orders || []).filter(
           (o: any) => o.container_id === container.id
         )
         const containerOrderIds = containerOrders.map((o: any) => o.id)
 
-        // Get order items for this container
+        // Get order items for this container (old style allocations)
         const containerOrderItems = orderItems.filter(
           (item: any) => containerOrderIds.includes(item.order_id)
         )
 
-        // Calculate allocated quantities per product
+        // Calculate allocated quantities per product from old-style linked orders
         const allocated: Record<string, number> = {}
         containerOrderItems.forEach((item: any) => {
           const productId = item.product_id
@@ -169,6 +175,24 @@ export default function ContainerInventoryPage() {
             }
           }
         })
+
+        // Add split allocations for this container
+        if (splitAllocations) {
+          splitAllocations.forEach((alloc: any) => {
+            if (alloc.container_id === container.id) {
+              // Find product by normalized name
+              const normalizedName = alloc.product_name.toLowerCase().trim().replace(/\s+/g, ' ')
+              const product = containerProds.find((cp: any) => {
+                const cpName = cp.product?.name?.toLowerCase().trim().replace(/\s+/g, ' ')
+                return cpName === normalizedName
+              })
+              
+              if (product && product.product_id) {
+                allocated[product.product_id] = (allocated[product.product_id] || 0) + (alloc.quantity || 0)
+              }
+            }
+          })
+        }
 
         // Calculate remaining quantities
         const remaining: Record<string, number> = {}
