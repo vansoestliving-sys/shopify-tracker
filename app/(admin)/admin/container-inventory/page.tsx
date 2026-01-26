@@ -135,9 +135,10 @@ export default function ContainerInventoryPage() {
 
       // Get split allocations (order_container_allocations)
       // These track partial allocations when orders are split across containers
+      // CRITICAL: Must include order_id to identify which orders have split allocations
       const { data: splitAllocations, error: allocError } = await supabase
         .from('order_container_allocations')
-        .select('container_id, product_name, quantity')
+        .select('order_id, container_id, product_name, quantity')
 
       if (allocError) {
         console.warn('Warning: Could not fetch split allocations:', allocError)
