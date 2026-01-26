@@ -346,9 +346,10 @@ export default function ContainerInventoryPage() {
       if (directError) throw directError
 
       // Also get orders that have allocations to this container (split orders)
+      // CRITICAL: Get full allocation details (product_name, quantity) to show only allocated items
       const { data: allocations, error: allocError } = await supabase
         .from('order_container_allocations')
-        .select('order_id')
+        .select('order_id, product_name, quantity')
         .eq('container_id', containerId)
 
       if (allocError) throw allocError
@@ -356,6 +357,18 @@ export default function ContainerInventoryPage() {
       const allocatedOrderIds = new Set(
         (allocations || []).map((a: any) => a.order_id)
       )
+
+      // Build map of allocations per order for this container
+      // Format: { orderId: { productName: quantity } }
+      const allocationsByOrder: Record<string, Record<string, number>> = {}
+      allocations?.forEach((alloc: any) => {
+        if (!allocationsByOrder[alloc.order_id]) {
+          allocationsByOrder[alloc.order_id] = {}
+        }
+        // Normalize product name for matching
+        const normalizedName = alloc.product_name.toLowerCase().trim().replace(/\s+/g, ' ')
+        allocationsByOrder[alloc.order_id][normalizedName] = alloc.quantity
+      })
 
       // Get orders that have allocations to this container but aren't directly linked
       // This includes orders with container_id = NULL or container_id = different container
@@ -409,23 +422,57 @@ export default function ContainerInventoryPage() {
       }
 
       // Combine orders with their items
-      const ordersWithItems: ContainerOrder[] = (orders || []).map((order: any) => ({
-        id: order.id,
-        shopify_order_number: order.shopify_order_number,
-        customer_email: order.customer_email,
-        customer_first_name: order.customer_first_name,
-        delivery_eta: order.delivery_eta,
-        status: order.status,
-        total_amount: order.total_amount,
-        currency: order.currency || 'EUR',
-        items: orderItems
-          .filter((item: any) => item.order_id === order.id)
-          .map((item: any) => ({
-            name: item.name,
-            quantity: item.quantity || 1,
-            price: item.price,
-          })),
-      }))
+      // CRITICAL: For split orders, show only items allocated to THIS container
+      const ordersWithItems: ContainerOrder[] = (orders || []).map((order: any) => {
+        const isSplitOrder = allocationsByOrder[order.id] !== undefined
+        
+        let items: any[] = []
+        
+        if (isSplitOrder) {
+          // Split order: Show only items allocated to this container
+          const orderAllocations = allocationsByOrder[order.id]
+          const orderItemsForThisOrder = orderItems.filter((item: any) => item.order_id === order.id)
+          
+          // Match order items to allocations by normalized product name
+          items = orderItemsForThisOrder
+            .map((item: any) => {
+              const normalizedName = (item.name || '').toLowerCase().trim().replace(/\s+/g, ' ')
+              const allocatedQty = orderAllocations[normalizedName]
+              
+              // Only include items that are allocated to this container
+              if (allocatedQty !== undefined && allocatedQty > 0) {
+                return {
+                  name: item.name,
+                  quantity: allocatedQty, // Use allocated quantity, not order item quantity
+                  price: item.price,
+                }
+              }
+              return null
+            })
+            .filter(Boolean) // Remove null entries
+        } else {
+          // Direct order (old-style): Show all items
+          items = orderItems
+            .filter((item: any) => item.order_id === order.id)
+            .map((item: any) => ({
+              name: item.name,
+              quantity: item.quantity || 1,
+              price: item.price,
+            }))
+        }
+        
+        return {
+          id: order.id,
+          shopify_order_number: order.shopify_order_number,
+          customer_email: order.customer_email,
+          customer_first_name: order.customer_first_name,
+          delivery_eta: order.delivery_eta,
+          status: order.status,
+          total_amount: order.total_amount,
+          currency: order.currency || 'EUR',
+          items,
+        }
+      })
 
       setContainerOrders(ordersWithItems)
     } catch (error: any) {
