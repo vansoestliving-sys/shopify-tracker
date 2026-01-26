@@ -144,6 +144,11 @@ export default function ContainerInventoryPage() {
         // Continue without split allocations - old-style allocations will still work
       }
 
+      // Get all order IDs that have split allocations (to avoid double-counting)
+      const ordersWithSplitAllocations = new Set(
+        (splitAllocations || []).map((alloc: any) => alloc.order_id).filter(Boolean)
+      )
+
       // Build inventory with allocated quantities
       const inventoryData: ContainerInventory[] = (containers || []).map((container: any) => {
         const containerProds = ((containerProducts || []) as any[]).filter(
@@ -160,8 +165,10 @@ export default function ContainerInventoryPage() {
         const containerOrderIds = containerOrders.map((o: any) => o.id)
 
         // Get order items for this container (old style allocations)
+        // CRITICAL: Exclude orders that have split allocations to avoid double-counting
+        // If an order has split allocations, only count from split allocations, not from old-style
         const containerOrderItems = orderItems.filter(
-          (item: any) => containerOrderIds.includes(item.order_id)
+          (item: any) => containerOrderIds.includes(item.order_id) && !ordersWithSplitAllocations.has(item.order_id)
         )
 
         // Calculate allocated quantities per product from old-style linked orders
@@ -189,9 +196,16 @@ export default function ContainerInventoryPage() {
         })
 
         // Add split allocations for this container
+        // CRITICAL: Split allocations are the source of truth for orders with split allocations
         if (splitAllocations) {
           splitAllocations.forEach((alloc: any) => {
             if (alloc.container_id === container.id) {
+              // Exclude turn function items from split allocations too
+              const productName = alloc.product_name.toLowerCase().trim()
+              if (productName.includes('draaifunctie') || productName.includes('turn function')) {
+                return // Skip turn function items
+              }
+              
               // Find product by normalized name
               const normalizedName = alloc.product_name.toLowerCase().trim().replace(/\s+/g, ' ')
               const product = containerProds.find((cp: any) => {
