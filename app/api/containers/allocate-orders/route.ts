@@ -228,10 +228,42 @@ export async function POST(request: NextRequest) {
         ordersWithNoItems.slice(0, 10).map((o: any) => o.shopify_order_number))
     }
 
+    // 5.4. Clean up stale allocation records for unlinked orders
+    // When orders are unlinked (container_id set to NULL), the old allocation records
+    // in order_container_allocations may not have been deleted. These stale records
+    // would corrupt inventory calculations and cause duplicate allocations on re-run.
+    if (orders.length > 0) {
+      const unlinkedOrderIds = orders.map((o: any) => o.id)
+      
+      // Check for stale allocation records in batches
+      for (let i = 0; i < unlinkedOrderIds.length; i += batchSize) {
+        const batch = unlinkedOrderIds.slice(i, i + batchSize)
+        const { data: staleAllocations } = await supabase
+          .from('order_container_allocations')
+          .select('order_id')
+          .in('order_id', batch)
+
+        if (staleAllocations && staleAllocations.length > 0) {
+          const staleOrderIds = [...new Set(staleAllocations.map((a: any) => a.order_id))]
+          console.log(`🧹 Cleaning up ${staleAllocations.length} stale allocation records for ${staleOrderIds.length} unlinked orders`)
+          
+          const { error: deleteError } = await supabase
+            .from('order_container_allocations')
+            .delete()
+            .in('order_id', staleOrderIds)
+
+          if (deleteError) {
+            console.error('Error deleting stale allocations:', deleteError)
+          }
+        }
+      }
+    }
+
     // 5.5a. Pre-fetch existing allocation records to avoid double-counting
     // Orders with entries in order_container_allocations are handled in step 5.6 ONLY.
     // Without this, the same order would be deducted twice: once here (via container_id)
     // and again in step 5.6 (via allocation records), causing containers to appear full.
+    // NOTE: Stale records for unlinked orders have been cleaned up in step 5.4 above.
     const { data: existingAllocations, error: allocError } = await supabase
       .from('order_container_allocations')
       .select('order_id, container_id, product_name, quantity')

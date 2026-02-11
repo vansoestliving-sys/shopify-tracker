@@ -77,6 +77,21 @@ export async function PATCH(
     if (container_id !== undefined) updateData.container_id = container_id
     if (customer_first_name !== undefined) updateData.customer_first_name = customer_first_name
 
+    // If container is being unlinked, also clean up allocation records
+    // This prevents stale records from corrupting future allocations
+    if (container_id === null) {
+      const { error: deleteAllocError } = await supabase
+        .from('order_container_allocations')
+        .delete()
+        .eq('order_id', params.id)
+
+      if (deleteAllocError) {
+        console.error('Error deleting allocation records during unlink:', deleteAllocError)
+      } else {
+        console.log(`🧹 Cleaned up allocation records for order ${params.id}`)
+      }
+    }
+
     // If container is set, also update ETA from container
     if (container_id) {
       const { data: container } = await supabase
