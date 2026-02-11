@@ -228,9 +228,22 @@ export async function POST(request: NextRequest) {
         ordersWithNoItems.slice(0, 10).map((o: any) => o.shopify_order_number))
     }
 
-    // 5.5. Deduct quantities from already-linked orders to get actual available inventory
-    // CRITICAL: We fetch linked orders' items SEPARATELY (not as part of allocation)
-    // This prevents over-allocation when re-running smart allocation
+    // 5.5a. Pre-fetch existing allocation records to avoid double-counting
+    // Orders with entries in order_container_allocations are handled in step 5.6 ONLY.
+    // Without this, the same order would be deducted twice: once here (via container_id)
+    // and again in step 5.6 (via allocation records), causing containers to appear full.
+    const { data: existingAllocations, error: allocError } = await supabase
+      .from('order_container_allocations')
+      .select('order_id, container_id, product_name, quantity')
+
+    const ordersWithAllocations = new Set(
+      (existingAllocations || []).map((a: any) => a.order_id).filter(Boolean)
+    )
+    console.log(`📊 Found ${ordersWithAllocations.size} orders with allocation records (will skip in old-style deduction)`)
+
+    // 5.5b. Deduct quantities from old-style linked orders ONLY
+    // CRITICAL: Skip orders that have allocation records — those are deducted in step 5.6
+    // This prevents the double-deduction bug where inventory was subtracted twice
     if (linkedOrders.length > 0) {
       const linkedOrderIds = linkedOrders.map((o: any) => o.id)
       let linkedOrderItems: any[] = []
@@ -252,6 +265,10 @@ export async function POST(request: NextRequest) {
 
       // Deduct linked orders' quantities from inventory
       for (const order of linkedOrders) {
+        // CRITICAL FIX: Skip orders that have allocation records to prevent double-deduction.
+        // These orders will be accurately deducted in step 5.6 using per-container allocation data.
+        if (ordersWithAllocations.has(order.id)) continue
+
         const items = linkedOrderItems.filter((item: any) => item.order_id === order.id)
         if (items.length === 0) continue
 
@@ -289,15 +306,12 @@ export async function POST(request: NextRequest) {
         }
       }
       
-      console.log(`📊 Deducted ${linkedOrders.length} linked orders from inventory`)
+      const oldStyleCount = linkedOrders.filter((o: any) => !ordersWithAllocations.has(o.id)).length
+      console.log(`📊 Deducted ${oldStyleCount} old-style linked orders from inventory (skipped ${linkedOrders.length - oldStyleCount} with allocation records)`)
     }
 
-    // 5.6. Deduct quantities from existing split allocations
-    // CRITICAL: Also account for orders that are split across containers
-    const { data: existingAllocations, error: allocError } = await supabase
-      .from('order_container_allocations')
-      .select('order_id, container_id, product_name, quantity')
-
+    // 5.6. Deduct quantities from allocation records (source of truth for smart-allocated orders)
+    // These records accurately track per-container, per-product quantities
     if (!allocError && existingAllocations && existingAllocations.length > 0) {
       // Find LX1456-2 container ID for debugging
       const lx1456_2 = sortedContainers.find((c: any) => c.container_id === 'LX1456-2')

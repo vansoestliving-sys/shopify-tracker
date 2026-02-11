@@ -131,7 +131,19 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       }
     })
 
-    // 5. Deduct quantities from already-linked orders (old style)
+    // 5a. Pre-fetch existing allocation records to avoid double-counting
+    // Orders with allocation records are deducted in step 6 ONLY
+    const { data: allAllocations, error: allocError } = await supabase
+      .from('order_container_allocations')
+      .select('order_id, container_id, product_name, quantity')
+      .neq('order_id', orderId)
+
+    const ordersWithAllocations = new Set(
+      (allAllocations || []).map((a: any) => a.order_id).filter(Boolean)
+    )
+
+    // 5b. Deduct quantities from old-style linked orders ONLY
+    // CRITICAL: Skip orders that have allocation records — those are deducted in step 6
     const { data: linkedOrders, error: linkedError } = await supabase
       .from('orders')
       .select('id, container_id')
@@ -177,6 +189,9 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
         }
 
         linkedItems.forEach((item: any) => {
+          // CRITICAL FIX: Skip items from orders with allocation records (handled in step 6)
+          if (ordersWithAllocations.has(item.order_id)) return
+
           const linkedOrder = linkedOrders.find((o: any) => o.id === item.order_id)
           if (!linkedOrder?.container_id) return
 
@@ -197,12 +212,7 @@ export async function allocateOrderToContainer(orderId: string): Promise<{ conta
       }
     }
 
-    // 6. Deduct quantities from existing allocations (new split style)
-    const { data: allAllocations, error: allocError } = await supabase
-      .from('order_container_allocations')
-      .select('order_id, container_id, product_name, quantity')
-      .neq('order_id', orderId)
-
+    // 6. Deduct quantities from allocation records (source of truth for smart-allocated orders)
     if (!allocError && allAllocations) {
       // Get order items for allocated orders
       const allocatedOrderIds = Array.from(new Set(allAllocations.map((a: any) => a.order_id)))
