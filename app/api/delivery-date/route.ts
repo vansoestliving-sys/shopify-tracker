@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createSupabaseAdminClient } from '@/lib/supabase/server'
 
 // Dutch public holidays 2026
 const DUTCH_HOLIDAYS_2026 = [
@@ -48,24 +47,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Bestelnummer, e-mailadres en bezorgdatum zijn verplicht.' },
         { status: 400 }
-      )
-    }
-
-    // Verify order + email match in database
-    const supabase = createSupabaseAdminClient()
-    const cleanOrderId = orderId.toString().replace(/^#+/, '').trim()
-
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .select('id, shopify_order_number, customer_email')
-      .eq('shopify_order_number', cleanOrderId)
-      .ilike('customer_email', email.trim())
-      .single()
-
-    if (orderError || !order) {
-      return NextResponse.json(
-        { error: 'Bestelnummer en e-mailadres komen niet overeen. Controleer uw gegevens.' },
-        { status: 404 }
       )
     }
 
