@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createSupabaseAdminClient } from '@/lib/supabase/server'
 
 // Dutch public holidays 2026
 const DUTCH_HOLIDAYS_2026 = [
@@ -40,13 +41,31 @@ function getMinDeliveryDate(): Date {
 
 export async function POST(request: NextRequest) {
   try {
-    const { orderId, deliveryDate, formattedDate, submittedAt } = await request.json()
+    const { orderId, email, deliveryDate, formattedDate, submittedAt } = await request.json()
 
     // Validate required fields
-    if (!orderId || !deliveryDate) {
+    if (!orderId || !email || !deliveryDate) {
       return NextResponse.json(
-        { error: 'Bestelnummer en bezorgdatum zijn verplicht.' },
+        { error: 'Bestelnummer, e-mailadres en bezorgdatum zijn verplicht.' },
         { status: 400 }
+      )
+    }
+
+    // Verify order + email match in database
+    const supabase = createSupabaseAdminClient()
+    const cleanOrderId = orderId.toString().replace(/^#+/, '').trim()
+
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('id, shopify_order_number, customer_email')
+      .eq('shopify_order_number', cleanOrderId)
+      .ilike('customer_email', email.trim())
+      .single()
+
+    if (orderError || !order) {
+      return NextResponse.json(
+        { error: 'Bestelnummer en e-mailadres komen niet overeen. Controleer uw gegevens.' },
+        { status: 404 }
       )
     }
 
@@ -94,6 +113,7 @@ export async function POST(request: NextRequest) {
       try {
         const webhookPayload = {
           orderId: orderId.toString().trim(),
+          email: email.trim(),
           deliveryDate,
           formattedDate: formattedDate || deliveryDate,
           submittedAt: submittedAt || new Date().toISOString(),

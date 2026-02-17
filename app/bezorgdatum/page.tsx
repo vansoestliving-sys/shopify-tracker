@@ -65,8 +65,10 @@ function formatDateDutch(dateStr: string): string {
 function BezorgdatumForm() {
   const searchParams = useSearchParams()
   const prefillOrder = searchParams.get('order') || ''
+  const prefillEmail = searchParams.get('email') || ''
 
   const [orderId, setOrderId] = useState(prefillOrder)
+  const [email, setEmail] = useState(prefillEmail)
   const [selectedDate, setSelectedDate] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -75,10 +77,9 @@ function BezorgdatumForm() {
   const minDate = useMemo(() => getMinDeliveryDate(), [])
 
   useEffect(() => {
-    if (prefillOrder) {
-      setOrderId(prefillOrder)
-    }
-  }, [prefillOrder])
+    if (prefillOrder) setOrderId(prefillOrder)
+    if (prefillEmail) setEmail(prefillEmail)
+  }, [prefillOrder, prefillEmail])
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value
@@ -108,7 +109,7 @@ function BezorgdatumForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!orderId.trim() || !selectedDate) return
+    if (!orderId.trim() || !email.trim() || !selectedDate) return
 
     setSubmitting(true)
     setError(null)
@@ -119,6 +120,7 @@ function BezorgdatumForm() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: orderId.trim().replace(/^#+/, ''),
+          email: email.trim(),
           deliveryDate: selectedDate,
           formattedDate: formatDateDutch(selectedDate),
           submittedAt: new Date().toISOString(),
@@ -221,6 +223,26 @@ function BezorgdatumForm() {
                 />
               </div>
 
+              {/* Email */}
+              <div>
+                <label htmlFor="email" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+                  E-mailadres
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  readOnly={!!prefillEmail}
+                  className={`w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium ${prefillEmail ? 'bg-gray-50 text-gray-600' : ''}`}
+                  placeholder="uw@email.nl"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Het e-mailadres waarmee u heeft besteld
+                </p>
+              </div>
+
               {/* Date Picker */}
               <div>
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
@@ -256,7 +278,7 @@ function BezorgdatumForm() {
               {/* Submit */}
               <button
                 type="submit"
-                disabled={submitting || !selectedDate || !orderId.trim()}
+                disabled={submitting || !selectedDate || !orderId.trim() || !email.trim()}
                 className="w-full bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 disabled:from-gray-400 disabled:to-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:transform-none"
               >
                 {submitting ? 'Verzenden...' : 'Bezorgdatum Bevestigen'}
