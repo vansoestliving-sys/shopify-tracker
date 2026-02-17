@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Calendar, CheckCircle, AlertCircle } from 'lucide-react'
+import { Calendar, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import Logo from '@/components/Logo'
 
 // Dutch public holidays (fixed + computed for 2026)
@@ -62,7 +62,7 @@ function formatDateDutch(dateStr: string): string {
   })
 }
 
-export default function BezorgdatumPage() {
+function BezorgdatumForm() {
   const searchParams = useSearchParams()
   const prefillOrder = searchParams.get('order') || ''
 
@@ -282,5 +282,17 @@ export default function BezorgdatumPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function BezorgdatumPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-400" />
+      </div>
+    }>
+      <BezorgdatumForm />
+    </Suspense>
   )
 }
