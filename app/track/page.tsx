@@ -186,7 +186,7 @@ export default function TrackPage() {
                   
                   {/* Delivery Information Text */}
                   <p className="text-sm text-gray-600 mt-4 italic">
-                    De getoonde leverdatum is een verwachting. Wanneer je bestelling klaar is, nemen wij of de vervoerder rond of kort na deze datum contact met je op via e-mail of telefoon om een definitieve leverdatum af te spreken.
+                    De getoonde datum is een verwachting. Wanneer je bestelling klaar is, nemen wij of de vervoerder rond of kort na deze datum contact met je op via e-mail of telefoon om een definitieve leverdatum af te spreken.
                   </p>
                 </div>
               </div>
