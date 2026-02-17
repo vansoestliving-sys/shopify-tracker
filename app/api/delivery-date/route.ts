@@ -87,8 +87,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Send to Make.com webhook
-    const webhookUrl = process.env.MAKE_DELIVERY_DATE_WEBHOOK_URL
+    // Send to Google Apps Script webhook (writes to spreadsheet column AE)
+    const webhookUrl = process.env.DELIVERY_DATE_WEBHOOK_URL
     
     if (webhookUrl) {
       try {
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
           submittedAt: submittedAt || new Date().toISOString(),
         }
 
-        console.log(`📬 Sending delivery date to Make.com webhook for order #${orderId}:`, webhookPayload)
+        console.log(`📬 Sending delivery date to Google Sheet for order #${orderId}:`, webhookPayload)
 
         const webhookResponse = await fetch(webhookUrl, {
           method: 'POST',
@@ -109,16 +109,15 @@ export async function POST(request: NextRequest) {
         })
 
         if (!webhookResponse.ok) {
-          console.error('⚠️ Make.com webhook returned non-OK status:', webhookResponse.status)
+          console.error('⚠️ Google Apps Script webhook returned non-OK status:', webhookResponse.status)
         } else {
-          console.log(`✅ Delivery date for order #${orderId} sent to Make.com successfully`)
+          console.log(`✅ Delivery date for order #${orderId} saved to Google Sheet`)
         }
       } catch (webhookError: any) {
-        // Log but don't fail - the submission should still succeed for the customer
-        console.error('⚠️ Failed to send to Make.com webhook:', webhookError.message)
+        console.error('⚠️ Failed to send to Google Apps Script webhook:', webhookError.message)
       }
     } else {
-      console.warn('⚠️ MAKE_DELIVERY_DATE_WEBHOOK_URL not set - delivery date not forwarded')
+      console.warn('⚠️ DELIVERY_DATE_WEBHOOK_URL not set - delivery date not forwarded')
     }
 
     return NextResponse.json({
