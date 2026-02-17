@@ -214,8 +214,10 @@ function BezorgdatumForm() {
                 <input
                   id="orderId"
                   type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
                   value={orderId}
-                  onChange={(e) => setOrderId(e.target.value)}
+                  onChange={(e) => setOrderId(e.target.value.replace(/[^0-9]/g, ''))}
                   required
                   readOnly={!!prefillOrder}
                   className={`w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium ${prefillOrder ? 'bg-gray-50 text-gray-600' : ''}`}
