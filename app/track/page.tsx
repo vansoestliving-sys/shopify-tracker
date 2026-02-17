@@ -166,7 +166,7 @@ export default function TrackPage() {
                       <Calendar className="w-6 h-6 text-primary-400" />
                     </div>
                     <div>
-                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Verwachte Levering</p>
+                      <p className="text-xs text-gray-500 uppercase tracking-wide font-medium mb-1">Verwacht Contactmoment</p>
                       <p className="text-2xl font-bold text-gray-900">
                         {(() => {
                           const deliveryDate = new Date(order.delivery_eta)
@@ -176,7 +176,7 @@ export default function TrackPage() {
                           
                           // If delivery date is in the past, show "Levering binnen enkele dagen"
                           if (deliveryDate < today) {
-                            return 'Levering binnen enkele dagen'
+                            return 'Contactmoment binnen enkele dagen'
                           }
                           return formatDate(order.delivery_eta)
                         })()}
@@ -186,7 +186,7 @@ export default function TrackPage() {
                   
                   {/* Delivery Information Text */}
                   <p className="text-sm text-gray-600 mt-4 italic">
-                    Rond het moment dat je bestelling klaar is voor levering, word je telefonisch benaderd door de vervoerder. Samen plannen jullie een definitieve leveringsdag die het beste voor jou uitkomt.
+                    De getoonde leverdatum is een verwachting. Wanneer je bestelling klaar is, nemen wij of de vervoerder rond of kort na deze datum contact met je op via e-mail of telefoon om een definitieve leverdatum af te spreken.
                   </p>
                 </div>
               </div>
