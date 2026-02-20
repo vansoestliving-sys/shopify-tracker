@@ -294,6 +294,21 @@ function BezorgdatumForm() {
               </p>
             </div>
 
+            {/* Extra important info */}
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <p className="text-xs font-semibold text-amber-800 mb-2">Extra belangrijke informatie na ontvangst:</p>
+              <ul className="text-xs text-amber-700 space-y-1">
+                <li className="flex items-start">
+                  <span className="mr-2">•</span>
+                  <span>De eetkamerstoelen zijn per twee stuks verpakt. (1 doos bevat 2 eetkamerstoelen)</span>
+                </li>
+                <li className="flex items-start">
+                  <span className="mr-2">•</span>
+                  <span>Als je draaifuncties hebt besteld, zijn deze allemaal in één of twee dozen toegevoegd</span>
+                </li>
+              </ul>
+            </div>
+
             <div className="mt-4 text-center">
               <p className="text-xs text-gray-400">
                 Alvast bedankt voor uw medewerking!
