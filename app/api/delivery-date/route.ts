@@ -7,13 +7,36 @@ const DUTCH_HOLIDAYS_2026 = [
   '2026-05-25', '2026-12-25', '2026-12-26',
 ]
 
+function toDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDateInput(dateStr: string): Date | null {
+  const parts = String(dateStr).split('-').map(Number)
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null
+
+  const [year, month, day] = parts
+  const date = new Date(year, month - 1, day)
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null
+  }
+  return date
+}
+
 function isWeekend(date: Date): boolean {
   const day = date.getDay()
   return day === 0 || day === 6
 }
 
 function isHoliday(date: Date): boolean {
-  const dateStr = date.toISOString().split('T')[0]
+  const dateStr = toDateKey(date)
   return DUTCH_HOLIDAYS_2026.includes(dateStr)
 }
 
@@ -51,8 +74,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate date format
-    const chosen = new Date(deliveryDate + 'T00:00:00')
-    if (isNaN(chosen.getTime())) {
+    const chosen = parseDateInput(deliveryDate)
+    if (!chosen) {
       return NextResponse.json(
         { error: 'Ongeldige datum.' },
         { status: 400 }
@@ -108,16 +131,55 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify(webhookPayload),
         })
 
-        if (!webhookResponse.ok) {
-          console.error('⚠️ Google Apps Script webhook returned non-OK status:', webhookResponse.status)
-        } else {
-          console.log(`✅ Delivery date for order #${orderId} saved to Google Sheet`)
+        let webhookResult: any = null
+        try {
+          webhookResult = await webhookResponse.json()
+        } catch {
+          webhookResult = null
         }
+
+        if (!webhookResponse.ok || (webhookResult && webhookResult.success === false)) {
+          const webhookError = String(
+            webhookResult?.error || webhookResult?.message || `Webhook fout (${webhookResponse.status})`
+          )
+          const lowerError = webhookError.toLowerCase()
+
+          // Friendly message for duplicate submissions
+          if (
+            lowerError.includes('already') ||
+            lowerError.includes('bestaat al') ||
+            lowerError.includes('exists') ||
+            lowerError.includes('reeds') ||
+            lowerError.includes('al ingevuld') ||
+            lowerError.includes('already filled')
+          ) {
+            return NextResponse.json(
+              { error: 'Voor dit bestelnummer is al een bezorgdatum doorgegeven. Aanpassen is niet meer mogelijk.' },
+              { status: 409 }
+            )
+          }
+
+          console.error('⚠️ Google Apps Script webhook returned error:', webhookError)
+          return NextResponse.json(
+            { error: 'Bezorgdatum kon niet worden opgeslagen. Probeer het later opnieuw.' },
+            { status: 502 }
+          )
+        }
+
+        console.log(`✅ Delivery date for order #${orderId} saved to Google Sheet`)
       } catch (webhookError: any) {
         console.error('⚠️ Failed to send to Google Apps Script webhook:', webhookError.message)
+        return NextResponse.json(
+          { error: 'Bezorgdatum kon niet worden opgeslagen. Probeer het later opnieuw.' },
+          { status: 502 }
+        )
       }
     } else {
       console.warn('⚠️ DELIVERY_DATE_WEBHOOK_URL not set - delivery date not forwarded')
+      return NextResponse.json(
+        { error: 'Bezorgdatumservice is tijdelijk niet beschikbaar.' },
+        { status: 503 }
+      )
     }
 
     return NextResponse.json({

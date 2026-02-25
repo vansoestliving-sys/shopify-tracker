@@ -21,13 +21,36 @@ const DUTCH_HOLIDAYS_2026 = [
   '2026-12-26', // Tweede Kerstdag
 ]
 
+function toDateKey(date: Date): string {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDateInput(dateStr: string): Date | null {
+  const parts = dateStr.split('-').map(Number)
+  if (parts.length !== 3 || parts.some((n) => Number.isNaN(n))) return null
+
+  const [year, month, day] = parts
+  const date = new Date(year, month - 1, day)
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null
+  }
+  return date
+}
+
 function isWeekend(date: Date): boolean {
   const day = date.getDay()
   return day === 0 || day === 6
 }
 
 function isHoliday(date: Date): boolean {
-  const dateStr = date.toISOString().split('T')[0]
+  const dateStr = toDateKey(date)
   return DUTCH_HOLIDAYS_2026.includes(dateStr)
 }
 
@@ -49,11 +72,12 @@ function getMinDeliveryDate(): string {
     }
   }
 
-  return candidate.toISOString().split('T')[0]
+  return toDateKey(candidate)
 }
 
 function formatDateDutch(dateStr: string): string {
-  const date = new Date(dateStr + 'T00:00:00')
+  const date = parseDateInput(dateStr)
+  if (!date) return dateStr
   return date.toLocaleDateString('nl-NL', {
     weekday: 'long',
     day: 'numeric',
@@ -89,7 +113,21 @@ function BezorgdatumForm() {
       return
     }
 
-    const chosen = new Date(value + 'T00:00:00')
+    const chosen = parseDateInput(value)
+    if (!chosen) {
+      setError('Ongeldige datum. Kies een geldige datum.')
+      setSelectedDate('')
+      return
+    }
+
+    const minDateKey = minDate
+    const chosenDateKey = toDateKey(chosen)
+
+    if (chosenDateKey < minDateKey) {
+      setError('Kies een datum die minimaal 2 werkdagen vanaf vandaag ligt.')
+      setSelectedDate('')
+      return
+    }
 
     if (isWeekend(chosen)) {
       setError('Wij leveren niet in het weekend. Kies een werkdag.')
