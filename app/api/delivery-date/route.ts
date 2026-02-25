@@ -131,16 +131,23 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify(webhookPayload),
         })
 
+        const webhookRaw = await webhookResponse.text()
         let webhookResult: any = null
         try {
-          webhookResult = await webhookResponse.json()
+          webhookResult = webhookRaw ? JSON.parse(webhookRaw) : null
         } catch {
           webhookResult = null
         }
 
-        if (!webhookResponse.ok || (webhookResult && webhookResult.success === false)) {
+        // Require explicit JSON success=true to prevent false positives.
+        // Apps Script can return 200 with non-JSON text/html on failures.
+        const explicitSuccess = Boolean(webhookResult && webhookResult.success === true)
+        if (!webhookResponse.ok || !explicitSuccess) {
           const webhookError = String(
-            webhookResult?.error || webhookResult?.message || `Webhook fout (${webhookResponse.status})`
+            webhookResult?.error ||
+            webhookResult?.message ||
+            webhookRaw ||
+            `Webhook fout (${webhookResponse.status})`
           )
           const lowerError = webhookError.toLowerCase()
 
