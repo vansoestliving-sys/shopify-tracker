@@ -327,7 +327,7 @@ function BezorgdatumForm() {
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                   Gewenste Bezorgdatum
                 </label>
-                <div className="relative min-w-0 w-full">
+                <div className="relative min-w-0 w-full overflow-hidden rounded-lg">
                   <input
                     id="deliveryDate"
                     type="date"
