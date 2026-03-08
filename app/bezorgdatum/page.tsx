@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, usePathname } from 'next/navigation'
 import { Calendar, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import Logo from '@/components/Logo'
 
@@ -88,8 +88,12 @@ function formatDateDutch(dateStr: string): string {
 
 function BezorgdatumForm() {
   const searchParams = useSearchParams()
-  const prefillOrder = searchParams.get('order') || ''
-  const prefillEmail = searchParams.get('email') || ''
+  const pathname = usePathname()
+  const segments = pathname.split('/').filter(Boolean)
+  const orderFromPath = segments[0] === 'bezorgdatum' && segments.length >= 3 ? segments[1] : ''
+  const emailFromPath = segments[0] === 'bezorgdatum' && segments.length >= 3 ? decodeURIComponent(segments[2]) : ''
+  const prefillOrder = searchParams.get('order') || orderFromPath || ''
+  const prefillEmail = searchParams.get('email') || emailFromPath || ''
 
   const [orderId, setOrderId] = useState(prefillOrder)
   const [email, setEmail] = useState(prefillEmail)
