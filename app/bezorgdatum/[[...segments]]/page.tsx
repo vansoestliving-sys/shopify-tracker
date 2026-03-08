@@ -239,7 +239,7 @@ function BezorgdatumForm() {
           </div>
         ) : (
           /* Form */
-          <div className="glass-card rounded-2xl p-8 shadow-2xl min-w-0 overflow-hidden">
+          <div className="glass-card rounded-2xl p-8 shadow-2xl min-w-0">
             <div className="text-center mb-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
                 Bezorgdatum Kiezen
@@ -323,11 +323,11 @@ function BezorgdatumForm() {
               </div>
 
               {/* Date Picker - explicit bg/text and color-scheme so mobile doesn't show it greyed */}
-              <div className="min-w-0 overflow-hidden">
+              <div className="min-w-0">
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                   Gewenste Bezorgdatum
                 </label>
-                <div className="relative min-w-0 w-full overflow-hidden">
+                <div className="relative min-w-0 w-full">
                   <input
                     id="deliveryDate"
                     type="date"
