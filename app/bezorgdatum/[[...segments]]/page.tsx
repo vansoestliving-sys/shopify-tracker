@@ -215,7 +215,7 @@ function BezorgdatumForm() {
         }}></div>
       </div>
 
-      <div className="max-w-xl mx-auto relative z-10">
+      <div className="max-w-xl mx-auto relative z-10 min-w-0">
         {/* Logo */}
         <div className="mb-3 flex justify-center">
           <Logo width={240} height={91} />
@@ -239,7 +239,7 @@ function BezorgdatumForm() {
           </div>
         ) : (
           /* Form */
-          <div className="glass-card rounded-2xl p-8 shadow-2xl">
+          <div className="glass-card rounded-2xl p-8 shadow-2xl min-w-0 overflow-hidden">
             <div className="text-center mb-6">
               <h1 className="text-2xl font-bold text-gray-900 mb-2">
                 Bezorgdatum Kiezen
@@ -282,7 +282,7 @@ function BezorgdatumForm() {
               </div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5">
+            <form onSubmit={handleSubmit} className="space-y-5 min-w-0">
               {/* Order ID */}
               <div>
                 <label htmlFor="orderId" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
@@ -323,11 +323,11 @@ function BezorgdatumForm() {
               </div>
 
               {/* Date Picker - explicit bg/text and color-scheme so mobile doesn't show it greyed */}
-              <div className="min-w-0">
+              <div className="min-w-0 overflow-hidden">
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                   Gewenste Bezorgdatum
                 </label>
-                <div className="relative min-w-0 w-full">
+                <div className="relative min-w-0 w-full overflow-hidden">
                   <input
                     id="deliveryDate"
                     type="date"
@@ -335,12 +335,13 @@ function BezorgdatumForm() {
                     onChange={handleDateChange}
                     min={minDate}
                     required
+                    style={{ minWidth: 0 }}
                     className="w-full max-w-full min-w-0 px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light] box-border"
                   />
-                  {/* Visible placeholder on mobile/iOS where native date input shows blank until focused */}
+                  {/* Placeholder only on mobile (sm:hidden); desktop shows native mm/dd so avoid overlap */}
                   {!selectedDate && (
                     <span
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none"
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none sm:hidden"
                       aria-hidden
                     >
                       dd-mm-jjjj
