@@ -337,6 +337,15 @@ function BezorgdatumForm() {
                     required
                     className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light]"
                   />
+                  {/* Visible placeholder on mobile/iOS where native date input shows blank until focused */}
+                  {!selectedDate && (
+                    <span
+                      className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none"
+                      aria-hidden
+                    >
+                      dd-mm-jjjj
+                    </span>
+                  )}
                 </div>
                 {selectedDate && (
                   <p className="mt-2 text-sm text-primary-600 font-medium">
