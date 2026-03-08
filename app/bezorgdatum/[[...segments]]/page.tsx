@@ -267,6 +267,19 @@ function BezorgdatumForm() {
               <p className="text-sm text-gray-700 leading-relaxed">
                 Daarnaast leveren wij <strong>niet op feestdagen of weekenden</strong>.
               </p>
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs font-semibold text-amber-800 mb-2">Extra belangrijke informatie na ontvangst:</p>
+                <ul className="text-xs text-amber-700 space-y-1">
+                  <li className="flex items-start">
+                    <span className="mr-2">•</span>
+                    <span>De eetkamerstoelen zijn per twee stuks verpakt. (1 doos bevat 2 eetkamerstoelen)</span>
+                  </li>
+                  <li className="flex items-start">
+                    <span className="mr-2">•</span>
+                    <span>Als je draaifuncties hebt besteld, zijn deze allemaal in één of twee dozen toegevoegd</span>
+                  </li>
+                </ul>
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -309,7 +322,7 @@ function BezorgdatumForm() {
                 </p>
               </div>
 
-              {/* Date Picker */}
+              {/* Date Picker - explicit bg/text and color-scheme so mobile doesn't show it greyed */}
               <div>
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                   Gewenste Bezorgdatum
@@ -322,7 +335,7 @@ function BezorgdatumForm() {
                     onChange={handleDateChange}
                     min={minDate}
                     required
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium"
+                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light]"
                   />
                 </div>
                 {selectedDate && (
