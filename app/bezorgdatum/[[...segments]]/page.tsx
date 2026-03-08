@@ -323,11 +323,11 @@ function BezorgdatumForm() {
               </div>
 
               {/* Date Picker - explicit bg/text and color-scheme so mobile doesn't show it greyed */}
-              <div>
+              <div className="min-w-0">
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                   Gewenste Bezorgdatum
                 </label>
-                <div className="relative">
+                <div className="relative min-w-0 w-full">
                   <input
                     id="deliveryDate"
                     type="date"
@@ -335,7 +335,7 @@ function BezorgdatumForm() {
                     onChange={handleDateChange}
                     min={minDate}
                     required
-                    className="w-full px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light]"
+                    className="w-full max-w-full min-w-0 px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light] box-border"
                   />
                   {/* Visible placeholder on mobile/iOS where native date input shows blank until focused */}
                   {!selectedDate && (
