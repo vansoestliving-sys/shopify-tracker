@@ -327,7 +327,7 @@ function BezorgdatumForm() {
                 <label htmlFor="deliveryDate" className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide">
                   Gewenste Bezorgdatum
                 </label>
-                <div className="relative min-w-0 w-full overflow-hidden rounded-lg">
+                <div className="relative grid w-full min-w-0 grid-cols-1">
                   <input
                     id="deliveryDate"
                     type="date"
@@ -335,13 +335,13 @@ function BezorgdatumForm() {
                     onChange={handleDateChange}
                     min={minDate}
                     required
-                    style={{ minWidth: 0 }}
-                    className="w-full max-w-full min-w-0 px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light] box-border"
+                    style={{ minWidth: 0, width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}
+                    className="col-start-1 row-start-1 w-full max-w-full min-w-0 px-4 py-3 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 transition-all text-sm font-medium bg-white text-gray-900 min-h-[48px] [color-scheme:light] box-border"
                   />
                   {/* Placeholder only on mobile (sm:hidden); desktop shows native mm/dd so avoid overlap */}
                   {!selectedDate && (
                     <span
-                      className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none sm:hidden"
+                      className="col-start-1 row-start-1 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none select-none sm:hidden"
                       aria-hidden
                     >
                       dd-mm-jjjj
