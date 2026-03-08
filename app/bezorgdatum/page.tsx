@@ -86,12 +86,34 @@ function formatDateDutch(dateStr: string): string {
   })
 }
 
+/** Parse order/email from path: either two segments (order, email) or one segment like "order/email" or "order#email" */
+function parseOrderEmailFromPath(segments: string[]): { order: string; email: string } {
+  if (segments[0] !== 'bezorgdatum') return { order: '', email: '' }
+  if (segments.length >= 3) {
+    return {
+      order: segments[1] ?? '',
+      email: decodeURIComponent(segments[2] ?? ''),
+    }
+  }
+  if (segments.length === 2) {
+    const decoded = decodeURIComponent(segments[1] ?? '')
+    const bySlash = decoded.split('/')
+    if (bySlash.length >= 2) {
+      return { order: bySlash[0].trim(), email: bySlash.slice(1).join('/').trim() }
+    }
+    const byHash = decoded.split('#')
+    if (byHash.length >= 2) {
+      return { order: byHash[0].trim(), email: byHash.slice(1).join('#').trim() }
+    }
+  }
+  return { order: '', email: '' }
+}
+
 function BezorgdatumForm() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const segments = pathname.split('/').filter(Boolean)
-  const orderFromPath = segments[0] === 'bezorgdatum' && segments.length >= 3 ? segments[1] : ''
-  const emailFromPath = segments[0] === 'bezorgdatum' && segments.length >= 3 ? decodeURIComponent(segments[2]) : ''
+  const { order: orderFromPath, email: emailFromPath } = parseOrderEmailFromPath(segments)
   const prefillOrder = searchParams.get('order') || orderFromPath || ''
   const prefillEmail = searchParams.get('email') || emailFromPath || ''
 
