@@ -137,17 +137,26 @@ export async function POST(request: NextRequest) {
       })),
     })
 
-    // 4. Get ONLY unlinked orders for allocation
-    // CRITICAL: Slim toewijzen MUST only assign unlinked orders
-    // Linked orders are FROZEN and must never be moved automatically
-    const { data: allOrders, error: ordersError } = await supabase
-      .from('orders')
-      .select('id, shopify_order_number, created_at, container_id')
-      .order('created_at', { ascending: true }) // FIFO: Oldest first
+    // 4. Get ALL orders (batch fetch - Supabase default limit is 1000)
+    // So unlinked orders like #2371, #2372 are not missed when total orders > 1000
+    const ordersLimit = 1000
+    let ordersOffset = 0
+    let allOrders: any[] = []
+    while (true) {
+      const { data: batch, error: ordersError } = await supabase
+        .from('orders')
+        .select('id, shopify_order_number, created_at, container_id')
+        .order('created_at', { ascending: true }) // FIFO: Oldest first
+        .range(ordersOffset, ordersOffset + ordersLimit - 1)
 
-    if (ordersError) {
-      console.error('Error fetching orders:', ordersError)
-      throw ordersError
+      if (ordersError) {
+        console.error('Error fetching orders:', ordersError)
+        throw ordersError
+      }
+      if (!batch || batch.length === 0) break
+      allOrders = [...allOrders, ...batch]
+      if (batch.length < ordersLimit) break
+      ordersOffset += ordersLimit
     }
 
     // CRITICAL RULE: Only process unlinked orders

@@ -48,6 +48,8 @@ interface ContainerOrder {
     quantity: number
     price: number | null
   }>
+  /** True when quantities shown are only the portion for this container (split order) */
+  _isSplitForThisContainer?: boolean
 }
 
 export default function ContainerInventoryPage() {
@@ -105,15 +107,24 @@ export default function ContainerInventoryPage() {
 
       if (cpError) throw cpError
 
-      // Get all linked orders with their items
-      const { data: orders, error: ordersError } = await supabase
-        .from('orders')
-        .select('id, container_id')
-        .not('container_id', 'is', null)
+      // Get all linked orders with their items (batch to avoid Supabase 1000-row default limit)
+      const ordersLimit = 1000
+      let ordersOffset = 0
+      let orders: any[] = []
+      while (true) {
+        const { data: batch, error: ordersError } = await supabase
+          .from('orders')
+          .select('id, container_id')
+          .not('container_id', 'is', null)
+          .range(ordersOffset, ordersOffset + ordersLimit - 1)
+        if (ordersError) throw ordersError
+        if (!batch || batch.length === 0) break
+        orders = [...orders, ...batch]
+        if (batch.length < ordersLimit) break
+        ordersOffset += ordersLimit
+      }
 
-      if (ordersError) throw ordersError
-
-      const orderIds = orders?.map((o: any) => o.id) || []
+      const orderIds = orders.map((o: any) => o.id)
       
       let orderItems: any[] = []
       if (orderIds.length > 0) {
@@ -423,45 +434,44 @@ export default function ContainerInventoryPage() {
       }
 
       // Combine orders with their items
-      // CRITICAL: For split orders, show only items allocated to THIS container
+      // CRITICAL: If an order has allocation rows for THIS container, ALWAYS show only those quantities
+      // (even when order.container_id === this container, so split orders never show "whole order" here)
       const ordersWithItems: ContainerOrder[] = (orders || []).map((order: any) => {
-        const isSplitOrder = allocationsByOrder[order.id] !== undefined
-        
+        const hasAllocationsForThisContainer = allocationsByOrder[order.id] !== undefined
+        const orderAllocations = allocationsByOrder[order.id] || {}
+        const orderItemsForThisOrder = orderItems.filter((item: any) => item.order_id === order.id)
+
         let items: any[] = []
-        
-        if (isSplitOrder) {
-          // Split order: Show only items allocated to this container
-          const orderAllocations = allocationsByOrder[order.id]
-          const orderItemsForThisOrder = orderItems.filter((item: any) => item.order_id === order.id)
-          
-          // Match order items to allocations by normalized product name
+
+        if (hasAllocationsForThisContainer && Object.keys(orderAllocations).length > 0) {
+          // Use allocation quantities only (per-container portion)
           items = orderItemsForThisOrder
             .map((item: any) => {
               const normalizedName = (item.name || '').toLowerCase().trim().replace(/\s+/g, ' ')
               const allocatedQty = orderAllocations[normalizedName]
-              
-              // Only include items that are allocated to this container
               if (allocatedQty !== undefined && allocatedQty > 0) {
                 return {
                   name: item.name,
-                  quantity: allocatedQty, // Use allocated quantity, not order item quantity
+                  quantity: allocatedQty,
                   price: item.price,
                 }
               }
               return null
             })
-            .filter(Boolean) // Remove null entries
+            .filter(Boolean) as any[]
         } else {
-          // Direct order (old-style): Show all items
-          items = orderItems
-            .filter((item: any) => item.order_id === order.id)
-            .map((item: any) => ({
-              name: item.name,
-              quantity: item.quantity || 1,
-              price: item.price,
-            }))
+          // No allocation rows for this container: show full order (old-style direct link)
+          items = orderItemsForThisOrder.map((item: any) => ({
+            name: item.name,
+            quantity: item.quantity || 1,
+            price: item.price,
+          }))
         }
-        
+
+        const totalAllocatedHere = items.reduce((sum: number, it: any) => sum + (it.quantity || 0), 0)
+        const orderTotalQty = orderItemsForThisOrder.reduce((sum: number, it: any) => sum + (it.quantity || 1), 0)
+        const isSplitDisplay = hasAllocationsForThisContainer && totalAllocatedHere < orderTotalQty
+
         return {
           id: order.id,
           shopify_order_number: order.shopify_order_number,
@@ -472,6 +482,7 @@ export default function ContainerInventoryPage() {
           total_amount: order.total_amount,
           currency: order.currency || 'EUR',
           items,
+          _isSplitForThisContainer: isSplitDisplay,
         }
       })
 
@@ -670,9 +681,12 @@ export default function ContainerInventoryPage() {
                     <span className="ml-2">
                       ({containerOrders.reduce((sum, order) => 
                         sum + (order.items?.reduce((itemSum: number, item: any) => itemSum + (item.quantity || 0), 0) || 0), 0
-                      )} stuks totaal)
+                      )} stuks totaal op deze container)
                     </span>
                   )}
+                </p>
+                <p className="text-xs text-amber-700 mt-1 bg-amber-50 px-2 py-1 rounded">
+                  Bij splitbestellingen tonen we alleen de hoeveelheid die aan deze container is toegewezen.
                 </p>
               </div>
               <button
@@ -731,6 +745,11 @@ export default function ContainerInventoryPage() {
                             )}
                           </div>
                         </div>
+                        {(order as any)._isSplitForThisContainer && (
+                          <p className="text-xs text-amber-700 bg-amber-50 px-2 py-1 rounded mt-2">
+                            Split: alleen aan deze container toegewezen hoeveelheid getoond.
+                          </p>
+                        )}
                       </div>
 
                       {order.items && order.items.length > 0 && (

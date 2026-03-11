@@ -25,6 +25,7 @@ interface Order {
   has_allocations?: boolean
   allocation_count?: number
   container_count?: number
+  allocation_container_ids?: string[]
 }
 
 interface Container {
@@ -460,13 +461,24 @@ export default function OrdersPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-gray-700">
                           {order.customer_first_name || 'N/A'}
                         </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-700">
-                        <div className="flex items-center gap-2">
-                          {container ? container.container_id : 'Not linked'}
-                          {order.has_allocations && order.container_count && order.container_count > 1 && (
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold" title={`Split across ${order.container_count} containers`}>
-                              SPLIT ({order.container_count})
-                            </span>
+                      <td className="px-6 py-4 text-gray-700">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {order.allocation_container_ids && order.allocation_container_ids.length > 0 ? (
+                            <>
+                              {(order.allocation_container_ids as string[])
+                                .map((cid) => containers.find((x) => x.id === cid)?.container_id)
+                                .filter(Boolean)
+                                .join(', ')}
+                              {order.container_count && order.container_count > 1 && (
+                                <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold" title="Order split across these containers">
+                                  SPLIT
+                                </span>
+                              )}
+                            </>
+                          ) : container ? (
+                            container.container_id
+                          ) : (
+                            'Not linked'
                           )}
                         </div>
                       </td>

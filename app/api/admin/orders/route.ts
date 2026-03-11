@@ -43,26 +43,39 @@ export async function GET(request: NextRequest) {
       throw testError
     }
 
-    // Query Supabase directly - no caching
-    const { data: orders, error } = await supabase
-      .from('orders')
-      .select(`
-        id,
-        shopify_order_number,
-        customer_email,
-        customer_first_name,
-        delivery_eta,
-        status,
-        container_id,
-        tracking_id,
-        created_at
-      `)
-      .order('created_at', { ascending: false })
-      .limit(1000) // Limit to prevent timeout
+    // Query Supabase: fetch ALL orders in batches (Supabase default limit is 1000)
+    // So "Totaal Bestellingen" and unlinked count are correct and no orders are hidden
+    const limit = 1000
+    let offset = 0
+    let orders: any[] = []
+    let hasMore = true
 
-    if (error) {
-      console.error('Supabase query error:', error)
-      throw error
+    while (hasMore) {
+      const { data: batch, error } = await supabase
+        .from('orders')
+        .select(`
+          id,
+          shopify_order_number,
+          customer_email,
+          customer_first_name,
+          delivery_eta,
+          status,
+          container_id,
+          tracking_id,
+          created_at
+        `)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
+
+      if (error) {
+        console.error('Supabase query error:', error)
+        throw error
+      }
+
+      if (!batch || batch.length === 0) break
+      orders = [...orders, ...batch]
+      if (batch.length < limit) hasMore = false
+      else offset += limit
     }
 
     // Fetch allocations for all orders to check if they're split
@@ -90,7 +103,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Add allocation info to orders
+    // Add allocation info to orders (including all container IDs for split orders)
     const ordersWithAllocations = orders?.map((order: any) => {
       const allocations = allocationsMap[order.id] || []
       const uniqueContainers = new Set(allocations.map((a: any) => a.container_id))
@@ -99,11 +112,12 @@ export async function GET(request: NextRequest) {
         has_allocations: allocations.length > 0,
         allocation_count: allocations.length,
         container_count: uniqueContainers.size,
+        allocation_container_ids: Array.from(uniqueContainers),
       }
     })
 
     // Log to verify we're getting fresh data from Supabase
-    console.log(`📦 Fetched ${orders?.length || 0} orders directly from Supabase database`)
+    console.log(`📦 Fetched ${orders?.length || 0} orders (all batches) from Supabase database`)
     console.log(`📋 Order IDs in database:`, orderIds.slice(0, 10))
     
     // Log latest orders to verify data
@@ -121,7 +135,8 @@ export async function GET(request: NextRequest) {
 
     const response = NextResponse.json({ 
       orders: ordersWithAllocations || orders || [],
-      count: orders?.length || 0
+      count: orders?.length || 0,
+      totalOrders: orders?.length || 0,
     })
     
     // Prevent caching - aggressive headers for Vercel

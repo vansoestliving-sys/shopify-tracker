@@ -9,7 +9,10 @@ const poppins = Poppins({
   variable: '--font-poppins',
 })
 
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL || (typeof process.env.VERCEL_URL === 'string' ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+
 export const metadata: Metadata = {
+  metadataBase: new URL(baseUrl),
   title: 'Van Soest Living - Order Tracking',
   description: 'Track your furniture order delivery status',
   icons: {
