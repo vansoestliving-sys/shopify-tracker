@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import { toast } from 'react-hot-toast'
 import Navigation from '@/components/Navigation'
-import { Package, RefreshCw, Edit2, Save, X, ShoppingBag, User, Calendar } from 'lucide-react'
+import { Package, RefreshCw, Edit2, Save, X, ShoppingBag, User, Calendar, Link2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
 interface Container {
@@ -63,6 +63,7 @@ export default function ContainerInventoryPage() {
   const [selectedContainerId, setSelectedContainerId] = useState<string | null>(null)
   const [containerOrders, setContainerOrders] = useState<ContainerOrder[]>([])
   const [loadingOrders, setLoadingOrders] = useState(false)
+  const [linkingOrders, setLinkingOrders] = useState(false)
 
   useEffect(() => {
     checkUser()
@@ -76,6 +77,12 @@ export default function ContainerInventoryPage() {
     }
     setUser(user)
     fetchInventory()
+  }
+
+  // Normalize product name for matching (same as allocate-orders logic)
+  const normalizeProductName = (name: string | null | undefined): string => {
+    if (!name) return ''
+    return name.toLowerCase().trim().replace(/\s+/g, ' ')
   }
 
   const fetchInventory = async () => {
@@ -185,25 +192,25 @@ export default function ContainerInventoryPage() {
 
         // Calculate allocated quantities per product from old-style linked orders
         // CRITICAL: Exclude turn function items (draaifunctie) - same as allocation logic
+        // Use normalized name matching so "Jordan" / "Eetkamerstoel Jordan" match
         const allocated: Record<string, number> = {}
         containerOrderItems.forEach((item: any) => {
-          // Exclude turn function items from allocation count
-          const itemName = item.name?.toLowerCase() || ''
-          if (itemName.includes('draaifunctie') || itemName.includes('turn function')) {
+          const itemName = normalizeProductName(item.name)
+          if (!itemName || itemName.includes('draaifunctie') || itemName.includes('turn function')) {
             return // Skip turn function items - they're not tracked for inventory
           }
-          
-          const productId = item.product_id
-          if (productId) {
-            allocated[productId] = (allocated[productId] || 0) + (item.quantity || 1)
-          } else {
-            // If no product_id, try to match by name
-            const product = containerProds.find((cp: any) => 
-              cp.product?.name?.toLowerCase() === item.name?.toLowerCase()
-            )
-            if (product) {
-              allocated[product.product_id] = (allocated[product.product_id] || 0) + (item.quantity || 1)
-            }
+          // Find container product: by product_id first, then by normalized name (so "Jordan" matches "Eetkamerstoel Jordan")
+          let product = item.product_id
+            ? containerProds.find((cp: any) => cp.product_id === item.product_id)
+            : null
+          if (!product) {
+            product = containerProds.find((cp: any) => {
+              const cpName = normalizeProductName(cp.product?.name)
+              return cpName && (cpName === itemName || cpName.includes(itemName) || itemName.includes(cpName))
+            }) || null
+          }
+          if (product) {
+            allocated[product.product_id] = (allocated[product.product_id] || 0) + (item.quantity || 1)
           }
         })
 
@@ -332,6 +339,33 @@ export default function ContainerInventoryPage() {
       }
     }
     setEditing(newEditing)
+  }
+
+  const handleLinkOrdersToContainer = async () => {
+    if (!selectedContainerId) return
+    setLinkingOrders(true)
+    try {
+      const res = await fetch(`/api/containers/${selectedContainerId}/link-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Link failed')
+      const linked = data.linked ?? 0
+      if (linked > 0) {
+        toast.success(`${linked} bestelling(en) gekoppeld. Vernieuw de weergave.`)
+        await fetchInventory()
+        await handleViewContainerOrders(selectedContainerId)
+      } else {
+        toast.success(data.message || 'Geen nieuwe bestellingen om te koppelen.')
+        await handleViewContainerOrders(selectedContainerId)
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'Koppelen mislukt')
+    } finally {
+      setLinkingOrders(false)
+    }
   }
 
   const handleViewContainerOrders = async (containerId: string) => {
@@ -661,8 +695,9 @@ export default function ContainerInventoryPage() {
           </div>
         )}
 
-        <div className="mt-6 text-sm text-gray-500">
-          <p>💡 <strong>Tip:</strong> Klik op de container naam om gekoppelde bestellingen te bekijken. Klik op het bewerk-icoon om de totale hoeveelheid aan te passen.</p>
+        <div className="mt-6 text-sm text-gray-500 space-y-1">
+          <p>💡 <strong>Tip:</strong> Klik op de container naam om gekoppelde bestellingen te bekijken. Gebruik &quot;Link bestellingen&quot; in het venster om ongekoppelde bestellingen aan deze container te koppelen; daarna Vernieuwen om Toegewezen/Resterend bij te werken.</p>
+          <p>Om een bestelling te ontkoppelen: open de bestelling (Admin → Bestellingen), kies &quot;Geen container&quot; en sla op.</p>
         </div>
       </div>
 
@@ -689,15 +724,26 @@ export default function ContainerInventoryPage() {
                   Bij splitbestellingen tonen we alleen de hoeveelheid die aan deze container is toegewezen.
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedContainerId(null)
-                  setContainerOrders([])
-                }}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleLinkOrdersToContainer}
+                  disabled={linkingOrders}
+                  className="px-3 py-2 bg-primary-500 text-white rounded-lg hover:bg-primary-600 disabled:opacity-50 flex items-center gap-2 text-sm"
+                  title="Koppel ongekoppelde bestellingen die bij deze container passen"
+                >
+                  <Link2 className={`w-4 h-4 ${linkingOrders ? 'animate-pulse' : ''}`} />
+                  {linkingOrders ? 'Bezig...' : 'Link bestellingen'}
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedContainerId(null)
+                    setContainerOrders([])
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">

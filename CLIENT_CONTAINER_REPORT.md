@@ -30,6 +30,24 @@
 
 ---
 
+## 2b. "I linked orders but Toegewezen / Resterend didn't update after refresh"
+
+**Cause:** Product names in order items (e.g. "Jordan") were matched exactly to container product names (e.g. "Eetkamerstoel Jordan"), so the count didn't find a match.
+
+**Fix:** Container Voorraad now uses **normalized name matching**: same logic as the allocation tool, and we also match when one name contains the other (e.g. "Jordan" matches "Eetkamerstoel Jordan"). After deploy, linking orders and clicking **Vernieuwen** should correctly increase Toegewezen and decrease Resterend.
+
+**Flow:** In Container Voorraad, open the container (e.g. LX1459) → click **"Link bestellingen"** to attach unlinked orders that match that container's products → click **Vernieuwen** on the main page to refresh the table. No manual stock change needed.
+
+---
+
+## 2c. Unlink / space in CRM
+
+**Unlink:** To unlink an order from a container: go to **Admin → Bestellingen**, open the order (edit), set **Container** to *"Geen container"*, and save. The order is then unlinked and allocation records for that order are cleared.
+
+**Link from Container Voorraad:** When viewing a container's orders (click container name), use **"Link bestellingen"** to link unlinked orders that match that container's products. Then use **Vernieuwen** on the main Container Voorraad page to see updated Toegewezen/Resterend.
+
+---
+
 ## 3. Order #2120: Container 20 in Voorraad vs Container 13 on order
 
 **If you see the full 4 pcs for #2120 under container 20:** The app shows only what is in the database for that container. So in `order_container_allocations` that order has **4 pcs allocated to container 20** (and possibly nothing for container 13). The split was either never created correctly (all quantity went to one container) or data was changed.
