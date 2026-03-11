@@ -350,15 +350,20 @@ export default function ContainerInventoryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Link failed')
+      const data = await res.json().catch(() => ({}))
       const linked = data.linked ?? 0
+      if (!res.ok) {
+        const msg = data.warning || data.message || data.error || 'Koppelen mislukt'
+        toast.error(msg)
+        return
+      }
       if (linked > 0) {
         toast.success(`${linked} bestelling(en) gekoppeld. Vernieuw de weergave.`)
         await fetchInventory()
         await handleViewContainerOrders(selectedContainerId)
       } else {
-        toast.success(data.message || 'Geen nieuwe bestellingen om te koppelen.')
+        const msg = data.warning || data.message || 'Geen nieuwe bestellingen om te koppelen.'
+        toast(msg, { icon: data.success === false ? '⚠️' : 'ℹ️' })
         await handleViewContainerOrders(selectedContainerId)
       }
     } catch (e: any) {

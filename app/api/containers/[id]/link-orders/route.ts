@@ -11,8 +11,8 @@ export async function POST(
     // ADMIN_SECRET_KEY is optional for additional API protection
     // For now, we rely on route protection via Supabase auth
 
-    const body = await request.json()
-    const { orderIds } = body // Optional: specific order IDs to link
+    const body = await request.json().catch(() => ({}))
+    const { orderIds } = body || {} // Optional: specific order IDs to link
 
     const supabase = createSupabaseAdminClient()
 
@@ -39,11 +39,11 @@ export async function POST(
     if (productsError) throw productsError
 
     const productShopifyIds = containerProducts
-      .map((cp: any) => cp.product?.shopify_product_id)
+      .map((cp: any) => (Array.isArray(cp.product) ? cp.product[0] : cp.product)?.shopify_product_id)
       .filter(Boolean)
     
     const productNames = containerProducts
-      .map((cp: any) => cp.product?.name)
+      .map((cp: any) => (Array.isArray(cp.product) ? cp.product[0] : cp.product)?.name)
       .filter(Boolean)
       .map((name: string) => name.toLowerCase().trim())
 
@@ -214,8 +214,9 @@ export async function POST(
         continue
       }
       
-      // Skip if already linked to this container
+      // Skip if already linked to this container (nothing to do)
       if (order.container_id === params.id) {
+        skippedOrders.push({ orderId: order.id, reason: 'already_linked_to_this_container' })
         continue
       }
 
@@ -284,24 +285,33 @@ export async function POST(
     })
 
     if (ordersToLink.length === 0) {
-      const skippedReasons = {
-        already_linked: skippedOrders.filter(s => s.reason === 'already_linked').length,
-        better_match: skippedOrders.filter(s => s.reason.startsWith('better_match')).length,
-        no_matches: skippedOrders.filter(s => s.reason === 'no_matches').length,
-        no_items: skippedOrders.filter(s => s.reason === 'no_items').length,
+      const alreadyThisContainer = skippedOrders.filter(s => s.reason === 'already_linked_to_this_container').length
+      const alreadyOther = skippedOrders.filter(s => s.reason === 'already_linked').length
+      const betterMatch = skippedOrders.filter(s => s.reason.startsWith('better_match')).length
+      const noMatches = skippedOrders.filter(s => s.reason === 'no_matches').length
+      const noItems = skippedOrders.filter(s => s.reason === 'no_items').length
+      const alreadyAllocated = skippedOrders.filter(s => s.reason === 'already_allocated').length
+
+      let warning = 'No orders to link to this container.'
+      if (alreadyThisContainer > 0) {
+        warning = `${alreadyThisContainer} order(s) are already linked to this container. Click Vernieuwen to see updated Toegewezen/Resterend.`
+      } else if (alreadyOther > 0) {
+        warning = `${alreadyOther} order(s) are already linked to other containers. Unlink them first (Admin → Bestellingen → open order → set Container to "Geen container" → Save), then try Link bestellingen again.`
+      } else if (alreadyAllocated > 0) {
+        warning = `${alreadyAllocated} order(s) are split across containers. To move them here, unlink first (Geen container), then run Slim toewijzen or link again.`
+      } else if (betterMatch > 0) {
+        warning = `${betterMatch} order(s) match other containers better. Link those containers first or set this container manually on the order.`
+      } else if (noMatches > 0 || noItems > 0) {
+        warning = 'No unlinked orders found that match this container\'s products. Add orders with matching products or link them manually via the order edit.'
       }
-      
+
       return NextResponse.json({
-        success: false,
+        success: true,
         linked: 0,
-        message: 'No orders to link to this container',
+        message: warning,
+        warning,
         skipped: skippedOrders.length,
-        skippedReasons,
-        warning: skippedReasons.better_match > 0 
-          ? `${skippedReasons.better_match} order(s) have more products matching other containers. Link those containers first.`
-          : skippedReasons.already_linked > 0
-          ? `${skippedReasons.already_linked} order(s) are already linked to other containers.`
-          : 'No orders found with products that best match this container.',
+        skippedReasons: { already_linked: alreadyOther, better_match: betterMatch, no_matches: noMatches, no_items: noItems, already_linked_to_this_container: alreadyThisContainer, already_allocated: alreadyAllocated },
       })
     }
 
