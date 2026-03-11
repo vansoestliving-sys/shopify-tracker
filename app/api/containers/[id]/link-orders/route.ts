@@ -75,15 +75,15 @@ export async function POST(
 
     if (itemsError) throw itemsError
 
-    // Also try matching by product name (for CSV imported orders that might not have shopify_product_id)
+    // Also try matching by product name (for CSV imported orders); limit to avoid timeout with large DB
     let orderItemsByName: any[] = []
     if (productNames.length > 0) {
-      const { data: allOrderItems, error: allItemsError } = await supabase
+      const { data: nameMatchChunk, error: allItemsError } = await supabase
         .from('order_items')
         .select('order_id, shopify_product_id, name')
-      
-      if (!allItemsError && allOrderItems) {
-        orderItemsByName = allOrderItems.filter((item: any) => {
+        .limit(1000)
+      if (!allItemsError && nameMatchChunk?.length) {
+        orderItemsByName = nameMatchChunk.filter((item: any) => {
           const itemName = item.name?.toLowerCase().trim()
           return itemName && productNames.some((pn: string) => itemName.includes(pn) || pn.includes(itemName))
         })
@@ -143,41 +143,44 @@ export async function POST(
     })
     
     allContainerProducts?.forEach((cp: any) => {
+      const product = Array.isArray(cp.product) ? cp.product[0] : cp.product
       const containerId = cp.container_id
-      if (containerProductMap[containerId]) {
-        if (cp.product?.shopify_product_id) {
-          containerProductMap[containerId].shopifyIds.add(cp.product.shopify_product_id)
+      if (containerProductMap[containerId] && product) {
+        if (product.shopify_product_id) {
+          containerProductMap[containerId].shopifyIds.add(product.shopify_product_id)
         }
-        if (cp.product?.name) {
-          containerProductMap[containerId].names.add(cp.product.name.toLowerCase().trim())
+        if (product.name) {
+          containerProductMap[containerId].names.add(product.name.toLowerCase().trim())
         }
       }
     })
 
-    // Get all order items for these orders to count matches per container
-    const { data: allOrderItems, error: allItemsError } = await supabase
-      .from('order_items')
-      .select('order_id, shopify_product_id, name')
-      .in('order_id', uniqueOrderIds)
-    
-    if (allItemsError) throw allItemsError
-
-    // Group order items by order_id
+    // Batch queries to avoid Supabase/PostgREST limits (e.g. URL length with large .in())
+    const BATCH_SIZE = 200
     const orderItemsMap: Record<string, any[]> = {}
-    allOrderItems?.forEach((item: any) => {
-      if (!orderItemsMap[item.order_id]) {
-        orderItemsMap[item.order_id] = []
-      }
-      orderItemsMap[item.order_id].push(item)
-    })
+    for (let i = 0; i < uniqueOrderIds.length; i += BATCH_SIZE) {
+      const batch = uniqueOrderIds.slice(i, i + BATCH_SIZE)
+      const { data: batchItems, error: allItemsError } = await supabase
+        .from('order_items')
+        .select('order_id, shopify_product_id, name')
+        .in('order_id', batch)
+      if (allItemsError) throw allItemsError
+      batchItems?.forEach((item: any) => {
+        if (!orderItemsMap[item.order_id]) orderItemsMap[item.order_id] = []
+        orderItemsMap[item.order_id].push(item)
+      })
+    }
 
-    // Query orders directly to check their actual container_id status
-    const { data: orders, error: ordersError } = await supabase
-      .from('orders')
-      .select('id, container_id, shopify_order_number')
-      .in('id', uniqueOrderIds)
-
-    if (ordersError) throw ordersError
+    let orders: any[] = []
+    for (let i = 0; i < uniqueOrderIds.length; i += BATCH_SIZE) {
+      const batch = uniqueOrderIds.slice(i, i + BATCH_SIZE)
+      const { data: batchOrders, error: ordersError } = await supabase
+        .from('orders')
+        .select('id, container_id, shopify_order_number')
+        .in('id', batch)
+      if (ordersError) throw ordersError
+      if (batchOrders) orders = orders.concat(batchOrders)
+    }
 
     if (!orders || orders.length === 0) {
       return NextResponse.json({
@@ -187,15 +190,17 @@ export async function POST(
       })
     }
 
-    // Check for existing allocations (split orders)
-    const { data: existingAllocations } = await supabase
-      .from('order_container_allocations')
-      .select('order_id')
-      .in('order_id', uniqueOrderIds)
-
-    const ordersWithAllocations = new Set(
-      (existingAllocations || []).map((a: any) => a.order_id)
-    )
+    // Check for existing allocations (split orders) - batched
+    const existingAllocations: any[] = []
+    for (let i = 0; i < uniqueOrderIds.length; i += BATCH_SIZE) {
+      const batch = uniqueOrderIds.slice(i, i + BATCH_SIZE)
+      const { data: batchAlloc } = await supabase
+        .from('order_container_allocations')
+        .select('order_id')
+        .in('order_id', batch)
+      if (batchAlloc) existingAllocations.push(...batchAlloc)
+    }
+    const ordersWithAllocations = new Set(existingAllocations.map((a: any) => a.order_id))
 
     // For each order, find which container has the MOST matching products
     const ordersToLink: string[] = []
