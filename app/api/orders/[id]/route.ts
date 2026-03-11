@@ -77,9 +77,9 @@ export async function PATCH(
     if (container_id !== undefined) updateData.container_id = container_id
     if (customer_first_name !== undefined) updateData.customer_first_name = customer_first_name
 
-    // If container is being unlinked, also clean up allocation records
-    // This prevents stale records from corrupting future allocations
+    // If container is being unlinked, clear delivery_eta and clean up allocation records
     if (container_id === null) {
+      updateData.delivery_eta = null
       const { error: deleteAllocError } = await supabase
         .from('order_container_allocations')
         .delete()

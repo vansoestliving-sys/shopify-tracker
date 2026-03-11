@@ -299,7 +299,7 @@ export async function POST(
 
       let warning = 'No orders to link to this container.'
       if (alreadyThisContainer > 0) {
-        warning = `${alreadyThisContainer} order(s) are already linked to this container. Click Vernieuwen to see updated Toegewezen/Resterend.`
+        warning = `${alreadyThisContainer} order(s) are already linked to this container. No new orders were linked. Click Vernieuwen to refresh the list. To link specific unlinked orders, set this container on each order in Admin → Bestellingen.`
       } else if (alreadyOther > 0) {
         warning = `${alreadyOther} order(s) are already linked to other containers. Unlink them first (Admin → Bestellingen → open order → set Container to "Geen container" → Save), then try Link bestellingen again.`
       } else if (alreadyAllocated > 0) {
