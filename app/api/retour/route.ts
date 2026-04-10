@@ -164,10 +164,9 @@ export async function POST(request: NextRequest) {
       webhookResult = null
     }
 
-    // Require explicit { success: true } from the webhook (matches delivery-date pattern)
-    const explicitSuccess = Boolean(webhookResult && webhookResult.success === true)
-
-    if (!webhookResponse.ok || !explicitSuccess) {
+    // n8n uses proper HTTP status codes — any 2xx is a success.
+    // (Unlike Google Apps Script which can return 200 with an HTML error page.)
+    if (!webhookResponse.ok) {
       const webhookError = String(
         webhookResult?.error ||
           webhookResult?.message ||
