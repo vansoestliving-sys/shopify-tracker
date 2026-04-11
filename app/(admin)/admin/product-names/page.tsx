@@ -13,12 +13,22 @@ interface ProductName {
   normalized: string
 }
 
+interface SyncedProduct {
+  id: string
+  name: string
+  shopify_product_id: string
+  sku: string | null
+  updated_at: string
+}
+
 export default function ProductNamesPage() {
   const router = useRouter()
   const supabase = createClientComponentClient()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [productNames, setProductNames] = useState<ProductName[]>([])
+  const [syncedProducts, setSyncedProducts] = useState<SyncedProduct[]>([])
+  const [loadingSynced, setLoadingSynced] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [normalizing, setNormalizing] = useState(false)
 
@@ -34,6 +44,7 @@ export default function ProductNamesPage() {
     }
     setUser(user)
     fetchProductNames()
+    fetchSyncedProducts()
   }
 
   const fetchProductNames = async () => {
@@ -89,6 +100,23 @@ export default function ProductNamesPage() {
       toast.error('Fout bij ophalen productnamen')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchSyncedProducts = async () => {
+    try {
+      setLoadingSynced(true)
+      const { data, error } = await supabase
+        .from('products')
+        .select('id, name, shopify_product_id, sku, updated_at')
+        .order('name', { ascending: true })
+
+      if (error) throw error
+      setSyncedProducts(data || [])
+    } catch (error: any) {
+      console.error('Error fetching synced products:', error)
+    } finally {
+      setLoadingSynced(false)
     }
   }
 
@@ -189,11 +217,68 @@ export default function ProductNamesPage() {
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Productnamen Normaliseren</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Producten Beheer</h1>
           <p className="text-sm text-gray-600 mt-1">
-            Bijwerk oude productnamen om bestellingen correct te koppelen aan containers
+            Bekijk gesynchroniseerde producten en normaliseer productnamen in bestaande bestellingen
           </p>
         </div>
+
+        {/* ── Section 1: Synced Products from Shopify ── */}
+        <div className="mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Gesynchroniseerde Producten</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Alle producten uit Shopify die beschikbaar zijn in het systeem. Nieuwe producten verschijnen hier na het klikken op de <strong>Products</strong> sync knop op het dashboard.
+              </p>
+            </div>
+            <span className="text-sm font-semibold text-primary-500 bg-primary-50 px-3 py-1 rounded-full">
+              {syncedProducts.length} producten
+            </span>
+          </div>
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+            {loadingSynced ? (
+              <div className="px-6 py-8 text-center text-gray-500">Laden...</div>
+            ) : syncedProducts.length === 0 ? (
+              <div className="px-6 py-8 text-center">
+                <p className="text-gray-500 mb-2">Geen producten gevonden.</p>
+                <p className="text-sm text-gray-400">Ga naar het dashboard en klik op <strong>Products</strong> om producten te synchroniseren vanuit Shopify.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Productnaam</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shopify ID</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Laatste Update</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {syncedProducts.map((product) => (
+                      <tr key={product.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-sm font-medium text-gray-900">{product.name}</td>
+                        <td className="px-6 py-3 text-sm text-gray-500">{product.sku || '—'}</td>
+                        <td className="px-6 py-3 text-sm text-gray-400 font-mono">{product.shopify_product_id}</td>
+                        <td className="px-6 py-3 text-sm text-gray-400">{new Date(product.updated_at).toLocaleDateString('nl-NL')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Section 2: Product Names in Orders (normalisation tool) ── */}
+        <div className="mb-6">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold text-gray-900">Productnamen Normaliseren</h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Dit overzicht toont productnamen die voorkomen in <strong>bestaande bestellingen</strong>. Nieuwe producten zonder bestellingen verschijnen hier nog niet — die staan in de tabel hierboven.
+            </p>
+          </div>
 
         {/* Quick Fix: Normalize all draaifunctie */}
         {draaifunctieVariations.length > 0 && (
@@ -312,6 +397,8 @@ export default function ProductNamesPage() {
               </tbody>
             </table>
           </div>
+        </div>
+
         </div>
 
         <div className="mt-4 text-sm text-gray-500">

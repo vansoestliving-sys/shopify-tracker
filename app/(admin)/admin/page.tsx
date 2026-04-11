@@ -221,7 +221,8 @@ export default function AdminDashboard() {
       }
 
       if (data.success) {
-        toast.success(`Synced ${data.synced} products successfully!`)
+        toast.success(`${data.synced} producten gesynchroniseerd! Nieuwe producten zijn nu beschikbaar in de container bewerken.`)
+        fetchData() // Refresh so container forms pick up new products immediately
       } else {
         setError('Product sync completed with errors')
         toast.error(`Synced ${data.synced} products, ${data.errors} errors`)
