@@ -5,3 +5,7 @@
 CREATE POLICY "Authenticated users can read customer_reviews"
   ON customer_reviews FOR SELECT
   USING (auth.role() = 'authenticated');
+
+CREATE POLICY "Authenticated users can delete customer_reviews"
+  ON customer_reviews FOR DELETE
+  USING (auth.role() = 'authenticated');

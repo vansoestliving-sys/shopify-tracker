@@ -161,6 +161,7 @@ function ReviewForm() {
   const [reviewText, setReviewText] = useState('')
   const [name, setName] = useState(prefillName)
   const [email] = useState(prefillEmail) // read-only if pre-filled
+  const [orderNum, setOrderNum] = useState(prefillOrder)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [redirectToTrustpilot, setRedirectToTrustpilot] = useState(false)
@@ -180,7 +181,7 @@ function ReviewForm() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          orderNumber: prefillOrder || null,
+          orderNumber: orderNum || null,
           customerName: name.trim() || null,
           customerEmail: (email || 'anonymous@vansoestliving.nl').trim(),
           rating,
@@ -212,9 +213,9 @@ function ReviewForm() {
 
         {submitted ? (
           redirectToTrustpilot ? (
-            <HighRatingSuccess orderNumber={prefillOrder} rating={rating} />
+            <HighRatingSuccess orderNumber={orderNum} rating={rating} />
           ) : (
-            <LowRatingSuccess orderNumber={prefillOrder} />
+            <LowRatingSuccess orderNumber={orderNum} />
           )
         ) : (
           <>
@@ -227,9 +228,9 @@ function ReviewForm() {
                     <h1 className="text-xl font-bold text-white leading-tight">
                       Uw mening telt!
                     </h1>
-                    {prefillOrder && (
+                    {orderNum && (
                       <p className="text-primary-100 text-xs mt-0.5">
-                        Bestelling #{prefillOrder}
+                        Bestelling #{orderNum}
                       </p>
                     )}
                   </div>
@@ -307,6 +308,29 @@ function ReviewForm() {
                     readOnly={!!prefillName}
                     className={`form-input ${prefillName ? 'bg-gray-50 text-gray-600' : ''}`}
                   />
+                </div>
+
+                {/* Order Number */}
+                <div>
+                  <label
+                    htmlFor="reviewOrder"
+                    className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide"
+                  >
+                    Bestelnummer
+                  </label>
+                  <input
+                    id="reviewOrder"
+                    type="text"
+                    value={orderNum}
+                    onChange={(e) => setOrderNum(e.target.value)}
+                    placeholder="Bv. 10452"
+                    disabled={submitting}
+                    readOnly={!!prefillOrder}
+                    className={`form-input ${prefillOrder ? 'bg-gray-50 text-gray-600' : ''}`}
+                  />
+                  {!prefillOrder && (
+                     <p className="text-xs text-gray-400 mt-1">Optioneel</p>
+                  )}
                 </div>
 
                 {/* Email (read-only if prefilled, shows masked) */}

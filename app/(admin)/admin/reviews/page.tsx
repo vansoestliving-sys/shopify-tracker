@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 import Navigation from '@/components/Navigation'
-import { Star, RefreshCw, ExternalLink, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Star, RefreshCw, ExternalLink, ThumbsDown, ThumbsUp, Trash2 } from 'lucide-react'
 
 interface CustomerReview {
   id: string
@@ -64,7 +64,18 @@ export default function ReviewsAdminPage() {
   const [reviews, setReviews] = useState<CustomerReview[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'positive' | 'negative'>('all')
-  const [filter, setFilter] = useState<'all' | 'positive' | 'negative'>('all')
+
+  const handleDeleteReview = async (id: string) => {
+    if (!confirm('Weet u zeker dat u deze review wilt verwijderen?')) return
+    try {
+      const { error } = await supabase.from('customer_reviews').delete().eq('id', id)
+      if (error) throw error
+      setReviews(prev => prev.filter(r => r.id !== id))
+    } catch (err) {
+      console.error('Error deleting review:', err)
+      alert('Fout bij het verwijderen van de review')
+    }
+  }
 
   useEffect(() => {
     checkUser()
@@ -196,6 +207,7 @@ export default function ReviewsAdminPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sentiment</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Trustpilot</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Review</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Acties</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
@@ -238,6 +250,15 @@ export default function ReviewsAdminPage() {
                         <p className="line-clamp-3 leading-relaxed">
                           {review.review_text || <span className="text-gray-300 italic">Geen tekst</span>}
                         </p>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-right">
+                        <button
+                          onClick={() => handleDeleteReview(review.id)}
+                          title="Review verwijderen"
+                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   ))}
