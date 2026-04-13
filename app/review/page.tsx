@@ -89,13 +89,15 @@ function LowRatingSuccess({ orderNumber }: { orderNumber: string }) {
       </p>
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 text-left">
         <p className="text-sm font-bold text-amber-800 mb-1">📬 Wat nu?</p>
-        <p className="text-sm text-amber-700 leading-relaxed">
-          Ons team neemt binnenkort contact met u op om te kijken hoe wij uw ervaring kunnen
-          verbeteren. U ontvangt een e-mail van{' '}
-          <a href="mailto:info@vansoestliving.nl" className="text-amber-800 underline font-medium">
-            info@vansoestliving.nl
-          </a>.
+        <p className="text-sm text-amber-700 leading-relaxed mb-3">
+          Ons team neemt mogelijk nog contact met u op om uw ervaring verder te bespreken.
         </p>
+        <div className="bg-white/50 rounded-lg p-3">
+          <p className="text-xs font-bold text-amber-800 mb-1">🎁 Maandelijkse verloting</p>
+          <p className="text-xs text-amber-700">
+            Ondanks uw mindere ervaring, doet u alsnog automatisch mee aan onze maandelijkse verloting van €100. Wij laten het u weten als u wint!
+          </p>
+        </div>
       </div>
       <p className="mt-6 text-xs text-gray-400">Met vriendelijke groet, Van Soest Living</p>
     </div>
@@ -338,12 +340,12 @@ function ReviewForm() {
                   className="w-full bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:transform-none flex items-center justify-center gap-2"
                 >
                   {submitting ? (
-                    <>
+                    <span className="flex items-center gap-2">
                       <Loader2 className="w-5 h-5 animate-spin" />
                       Verzenden…
-                    </>
+                    </span>
                   ) : (
-                    'Review Indienen'
+                    <span>Review Indienen</span>
                   )}
                 </button>
               </form>
