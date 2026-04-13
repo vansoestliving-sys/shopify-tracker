@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
+import { sendEmail } from '@/lib/email'
+import { deliveryDateConfirmationEmail } from '@/lib/email-templates'
 
 // Dutch public holidays 2026
 const DUTCH_HOLIDAYS_2026 = [
@@ -110,9 +113,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Send to Google Apps Script webhook (writes to spreadsheet column AE)
+    // ── 1. Send to Google Apps Script webhook (writes to spreadsheet column AE) ──
     const webhookUrl = process.env.DELIVERY_DATE_WEBHOOK_URL
-    
+    let customerFirstName = ''
+
     if (webhookUrl) {
       try {
         const webhookPayload = {
@@ -139,8 +143,6 @@ export async function POST(request: NextRequest) {
           webhookResult = null
         }
 
-        // Require explicit JSON success=true to prevent false positives.
-        // Apps Script can return 200 with non-JSON text/html on failures.
         const explicitSuccess = Boolean(webhookResult && webhookResult.success === true)
         if (!webhookResponse.ok || !explicitSuccess) {
           const webhookError = String(
@@ -151,7 +153,6 @@ export async function POST(request: NextRequest) {
           )
           const lowerError = webhookError.toLowerCase()
 
-          // Friendly message for duplicate submissions
           if (
             lowerError.includes('already') ||
             lowerError.includes('bestaat al') ||
@@ -182,11 +183,71 @@ export async function POST(request: NextRequest) {
         )
       }
     } else {
-      console.warn('⚠️ DELIVERY_DATE_WEBHOOK_URL not set - delivery date not forwarded')
-      return NextResponse.json(
-        { error: 'Bezorgdatumservice is tijdelijk niet beschikbaar.' },
-        { status: 503 }
-      )
+      console.warn('⚠️ DELIVERY_DATE_WEBHOOK_URL not set - delivery date not forwarded to Sheets')
+    }
+
+    // ── 2. Write delivery_date to Supabase (enables 7-day review cron) ──
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY
+        )
+
+        const orderNumber = orderId.toString().trim().replace(/^#+/, '')
+
+        // Find matching order by shopify_order_number
+        const { data: orderRow, error: findError } = await supabase
+          .from('orders')
+          .select('id, customer_first_name, customer_email')
+          .eq('shopify_order_number', orderNumber)
+          .maybeSingle()
+
+        if (findError) {
+          console.warn('⚠️ Could not find order in Supabase:', findError.message)
+        } else if (orderRow) {
+          const { error: updateError } = await supabase
+            .from('orders')
+            .update({
+              delivery_date: deliveryDate,
+              delivery_date_confirmed_at: new Date().toISOString(),
+            })
+            .eq('id', orderRow.id)
+
+          if (updateError) {
+            console.warn('⚠️ Could not update delivery_date in Supabase:', updateError.message)
+          } else {
+            console.log(`✅ delivery_date saved to Supabase for order #${orderNumber}`)
+            customerFirstName = orderRow.customer_first_name || ''
+          }
+        } else {
+          console.warn(`⚠️ Order #${orderNumber} not found in Supabase – delivery_date not persisted`)
+        }
+      } catch (err: any) {
+        console.warn('⚠️ Supabase delivery_date update failed:', err.message)
+        // Non-fatal — don't block the response
+      }
+    }
+
+    // ── 3. Send confirmation email via Resend ──
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const { subject, html } = deliveryDateConfirmationEmail({
+          firstName: customerFirstName,
+          orderNumber: orderId.toString().trim().replace(/^#+/, ''),
+          formattedDate: formattedDate || deliveryDate,
+        })
+
+        const emailResult = await sendEmail({ to: email.trim(), subject, html })
+        if (!emailResult.success) {
+          console.warn('⚠️ Delivery confirmation email failed:', emailResult.error)
+        }
+      } catch (emailErr: any) {
+        console.warn('⚠️ Email send error:', emailErr.message)
+        // Non-fatal
+      }
+    } else {
+      console.warn('⚠️ RESEND_API_KEY not set – skipping confirmation email')
     }
 
     return NextResponse.json({

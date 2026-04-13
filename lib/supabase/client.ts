@@ -9,7 +9,11 @@ if (!supabaseUrl || !supabaseAnonKey) {
   console.warn('Supabase credentials not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in .env.local')
 }
 
-export const supabase = createClientComponentClient()
+// Instantiate with fallback strings so the Next.js build doesn't fail when env vars are missing
+export const supabase = createClientComponentClient({
+  supabaseUrl: supabaseUrl || 'https://placeholder.supabase.co',
+  supabaseKey: supabaseAnonKey || 'placeholder'
+})
 
 // Service role client for admin operations (server-side only)
 export const createSupabaseAdminClient = () => {

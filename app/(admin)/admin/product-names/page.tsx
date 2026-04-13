@@ -23,7 +23,10 @@ interface SyncedProduct {
 
 export default function ProductNamesPage() {
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  const supabase = createClientComponentClient({
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
+  })
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [productNames, setProductNames] = useState<ProductName[]>([])

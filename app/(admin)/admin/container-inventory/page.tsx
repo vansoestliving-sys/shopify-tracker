@@ -54,7 +54,10 @@ interface ContainerOrder {
 
 export default function ContainerInventoryPage() {
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  const supabase = createClientComponentClient({
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder'
+  })
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [inventory, setInventory] = useState<ContainerInventory[]>([])

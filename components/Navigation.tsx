@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, Home, Package, Settings, LogOut, Truck } from 'lucide-react'
+import { Menu, X, Home, Package, Settings, LogOut, Truck, Star } from 'lucide-react'
 import Logo from './Logo'
 
 interface NavigationProps {
@@ -27,6 +27,7 @@ export default function Navigation({ user, onLogout, isAdmin = false }: Navigati
         { href: '/admin/orders', label: 'Bestellingen', icon: Package },
         { href: '/admin/container-inventory', label: 'Voorraad', icon: Package },
         { href: '/admin/product-names', label: 'Productnamen', icon: Settings },
+        { href: '/admin/reviews', label: 'Reviews', icon: Star },
       ]
     : [
         { href: '/dashboard', label: 'Mijn Bestellingen', icon: Package },
