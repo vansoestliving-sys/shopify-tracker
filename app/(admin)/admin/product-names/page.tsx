@@ -19,6 +19,7 @@ interface SyncedProduct {
   shopify_product_id: string
   sku: string | null
   updated_at: string
+  is_dpd: boolean
 }
 
 export default function ProductNamesPage() {
@@ -34,8 +35,6 @@ export default function ProductNamesPage() {
   const [loadingSynced, setLoadingSynced] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [normalizing, setNormalizing] = useState(false)
-  const [syncingDpd, setSyncingDpd] = useState(false)
-  const [syncResult, setSyncResult] = useState<string | null>(null)
 
   useEffect(() => {
     checkUser()
@@ -113,7 +112,7 @@ export default function ProductNamesPage() {
       setLoadingSynced(true)
       const { data, error } = await supabase
         .from('products')
-        .select('id, name, shopify_product_id, sku, updated_at')
+        .select('id, name, shopify_product_id, sku, updated_at, is_dpd')
         .order('name', { ascending: true })
 
       if (error) throw error
@@ -206,25 +205,21 @@ export default function ProductNamesPage() {
     }
   }
 
-  const handleSyncDpd = async () => {
-    setSyncingDpd(true)
-    setSyncResult(null)
+  const toggleDpdStatus = async (productId: string, currentStatus: boolean) => {
+    // UI Optimistic update
+    setSyncedProducts(prev => prev.map(p => p.id === productId ? { ...p, is_dpd: !currentStatus } : p))
     try {
-      const res = await fetch('/api/admin/sync-dpd', { method: 'POST' })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        toast.success(`DPD sync geslaagd: ${data.dpdProducts} DPD-producten bijgewerkt.`)
-        setSyncResult(`✅ DPD sync geslaagd: ${data.dpdProducts} DPD-producten, ${data.nonDpdProducts} niet-DPD producten bijgewerkt.`)
-        fetchSyncedProducts()
-      } else {
-        toast.error(data.error || 'DPD sync mislukt')
-        setSyncResult(`❌ Fout: ${data.error || 'Onbekende fout'}`)
-      }
-    } catch (err: any) {
-      toast.error(err.message)
-      setSyncResult(`❌ Fout: ${err.message}`)
-    } finally {
-      setSyncingDpd(false)
+      const { error } = await supabase
+        .from('products')
+        .update({ is_dpd: !currentStatus })
+        .eq('id', productId)
+      
+      if (error) throw error
+    } catch (error: any) {
+      console.error('Error toggling DPD status:', error)
+      toast.error('Fout bij bijwerken DPD status')
+      // Revert optimism
+      setSyncedProducts(prev => prev.map(p => p.id === productId ? { ...p, is_dpd: currentStatus } : p))
     }
   }
 
@@ -250,22 +245,7 @@ export default function ProductNamesPage() {
               Bekijk gesynchroniseerde producten en normaliseer productnamen in bestaande bestellingen
             </p>
           </div>
-          <button
-            onClick={handleSyncDpd}
-            disabled={syncingDpd}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
-          >
-            <RefreshCw className={`w-4 h-4 ${syncingDpd ? 'animate-spin' : ''}`} />
-            {syncingDpd ? 'Syncing...' : 'Sync DPD Status'}
-          </button>
         </div>
-
-        {/* DPD sync result */}
-        {syncResult && (
-          <div className={`mb-6 p-4 rounded-xl text-sm font-medium ${syncResult.startsWith('✅') ? 'bg-green-50 text-green-800 border border-green-100' : 'bg-red-50 text-red-800 border border-red-100'}`}>
-            {syncResult}
-          </div>
-        )}
 
         {/* ── Section 1: Synced Products from Shopify ── */}
         <div className="mb-8">
@@ -294,6 +274,7 @@ export default function ProductNamesPage() {
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Productnaam</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Is DPD?</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SKU</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Shopify ID</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Laatste Update</th>
@@ -303,6 +284,16 @@ export default function ProductNamesPage() {
                     {syncedProducts.map((product) => (
                       <tr key={product.id} className="hover:bg-gray-50">
                         <td className="px-6 py-3 text-sm font-medium text-gray-900">{product.name}</td>
+                        <td className="px-6 py-3 text-sm text-gray-500">
+                          <button
+                            onClick={() => toggleDpdStatus(product.id, product.is_dpd)}
+                            className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 ${product.is_dpd ? 'bg-primary-400' : 'bg-gray-200'}`}
+                            role="switch"
+                            aria-checked={product.is_dpd}
+                          >
+                            <span className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${product.is_dpd ? 'translate-x-4' : 'translate-x-0'}`} />
+                          </button>
+                        </td>
                         <td className="px-6 py-3 text-sm text-gray-500">{product.sku || '—'}</td>
                         <td className="px-6 py-3 text-sm text-gray-400 font-mono">{product.shopify_product_id}</td>
                         <td className="px-6 py-3 text-sm text-gray-400">{new Date(product.updated_at).toLocaleDateString('nl-NL')}</td>
