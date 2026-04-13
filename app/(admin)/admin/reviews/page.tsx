@@ -64,8 +64,7 @@ export default function ReviewsAdminPage() {
   const [reviews, setReviews] = useState<CustomerReview[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'positive' | 'negative'>('all')
-  const [syncingDpd, setSyncingDpd] = useState(false)
-  const [syncResult, setSyncResult] = useState<string | null>(null)
+  const [filter, setFilter] = useState<'all' | 'positive' | 'negative'>('all')
 
   useEffect(() => {
     checkUser()
@@ -95,23 +94,6 @@ export default function ReviewsAdminPage() {
     }
   }
 
-  const handleSyncDpd = async () => {
-    setSyncingDpd(true)
-    setSyncResult(null)
-    try {
-      const res = await fetch('/api/admin/sync-dpd', { method: 'POST' })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        setSyncResult(`✅ DPD sync geslaagd: ${data.dpdProducts} DPD-producten, ${data.nonDpdProducts} niet-DPD producten bijgewerkt.`)
-      } else {
-        setSyncResult(`❌ Fout: ${data.error || 'Onbekende fout'}`)
-      }
-    } catch (err: any) {
-      setSyncResult(`❌ Fout: ${err.message}`)
-    } finally {
-      setSyncingDpd(false)
-    }
-  }
 
   const filteredReviews = reviews.filter(r => {
     if (filter === 'positive') return r.rating >= 4
@@ -141,15 +123,6 @@ export default function ReviewsAdminPage() {
           </div>
           <div className="flex gap-2">
             <button
-              onClick={handleSyncDpd}
-              disabled={syncingDpd}
-              title="Sync DPD-status vanuit Google Sheets"
-              className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncingDpd ? 'animate-spin' : ''}`} />
-              {syncingDpd ? 'Syncing…' : 'Sync DPD'}
-            </button>
-            <button
               onClick={fetchReviews}
               className="flex items-center gap-2 px-3 py-2 bg-primary-400 hover:bg-primary-500 text-white text-sm font-medium rounded-lg transition-colors"
             >
@@ -158,13 +131,6 @@ export default function ReviewsAdminPage() {
             </button>
           </div>
         </div>
-
-        {/* DPD sync result */}
-        {syncResult && (
-          <div className={`mb-4 p-3 rounded-lg text-sm font-medium ${syncResult.startsWith('✅') ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-            {syncResult}
-          </div>
-        )}
 
         {/* Stats cards */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
