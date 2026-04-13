@@ -34,6 +34,8 @@ export default function ProductNamesPage() {
   const [loadingSynced, setLoadingSynced] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [normalizing, setNormalizing] = useState(false)
+  const [syncingDpd, setSyncingDpd] = useState(false)
+  const [syncResult, setSyncResult] = useState<string | null>(null)
 
   useEffect(() => {
     checkUser()
@@ -204,6 +206,28 @@ export default function ProductNamesPage() {
     }
   }
 
+  const handleSyncDpd = async () => {
+    setSyncingDpd(true)
+    setSyncResult(null)
+    try {
+      const res = await fetch('/api/admin/sync-dpd', { method: 'POST' })
+      const data = await res.json()
+      if (res.ok && data.success) {
+        toast.success(`DPD sync geslaagd: ${data.dpdProducts} DPD-producten bijgewerkt.`)
+        setSyncResult(`✅ DPD sync geslaagd: ${data.dpdProducts} DPD-producten, ${data.nonDpdProducts} niet-DPD producten bijgewerkt.`)
+        fetchSyncedProducts()
+      } else {
+        toast.error(data.error || 'DPD sync mislukt')
+        setSyncResult(`❌ Fout: ${data.error || 'Onbekende fout'}`)
+      }
+    } catch (err: any) {
+      toast.error(err.message)
+      setSyncResult(`❌ Fout: ${err.message}`)
+    } finally {
+      setSyncingDpd(false)
+    }
+  }
+
   const filteredProducts = productNames.filter(p => 
     p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.normalized.toLowerCase().includes(searchTerm.toLowerCase())
@@ -219,12 +243,29 @@ export default function ProductNamesPage() {
       <Navigation user={user || { email: '' }} onLogout={() => router.push('/')} isAdmin={true} />
       
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Producten Beheer</h1>
-          <p className="text-sm text-gray-600 mt-1">
-            Bekijk gesynchroniseerde producten en normaliseer productnamen in bestaande bestellingen
-          </p>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Producten Beheer</h1>
+            <p className="text-sm text-gray-600 mt-1">
+              Bekijk gesynchroniseerde producten en normaliseer productnamen in bestaande bestellingen
+            </p>
+          </div>
+          <button
+            onClick={handleSyncDpd}
+            disabled={syncingDpd}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white text-sm font-medium rounded-lg transition-colors shadow-sm"
+          >
+            <RefreshCw className={`w-4 h-4 ${syncingDpd ? 'animate-spin' : ''}`} />
+            {syncingDpd ? 'Syncing...' : 'Sync DPD Status'}
+          </button>
         </div>
+
+        {/* DPD sync result */}
+        {syncResult && (
+          <div className={`mb-6 p-4 rounded-xl text-sm font-medium ${syncResult.startsWith('✅') ? 'bg-green-50 text-green-800 border border-green-100' : 'bg-red-50 text-red-800 border border-red-100'}`}>
+            {syncResult}
+          </div>
+        )}
 
         {/* ── Section 1: Synced Products from Shopify ── */}
         <div className="mb-8">
