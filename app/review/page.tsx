@@ -105,7 +105,15 @@ function LowRatingSuccess({ orderNumber }: { orderNumber: string }) {
 }
 
 // ── Success: High rating (4-5) ─────────────────────────────────────────────
-function HighRatingSuccess({ orderNumber, rating }: { orderNumber: string; rating: number }) {
+function HighRatingSuccess({ orderNumber, rating, reviewText }: { orderNumber: string; rating: number; reviewText: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleTrustpilotClick = () => {
+    if (reviewText && reviewText.trim() !== '') {
+      navigator.clipboard.writeText(reviewText).catch(err => console.error('Failed to copy', err))
+      setCopied(true)
+    }
+  }
   return (
     <div className="glass-card rounded-2xl p-10 shadow-2xl text-center max-w-xl mx-auto">
       <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5">
@@ -123,10 +131,20 @@ function HighRatingSuccess({ orderNumber, rating }: { orderNumber: string; ratin
         kunnen profiteren.
       </p>
 
+      {copied && (
+        <div className="bg-green-50 border border-green-200 text-green-800 text-xs py-3 px-4 rounded-xl mb-4 text-left shadow-sm flex gap-2">
+          <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <p className="leading-relaxed">
+            <strong>Tekst gekopieerd!</strong><br/>Uw geschreven review staat nu op uw klembord. U hoeft het op de volgende pagina alleen nog maar te plakken.
+          </p>
+        </div>
+      )}
+
       <a
         href={TRUSTPILOT_URL}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={handleTrustpilotClick}
         id="trustpilot-cta"
         className="inline-flex items-center gap-2 bg-gradient-to-r from-[#00b67a] to-[#00a569] hover:from-[#00a569] hover:to-[#009560] text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 mb-6"
       >
@@ -213,7 +231,7 @@ function ReviewForm() {
 
         {submitted ? (
           redirectToTrustpilot ? (
-            <HighRatingSuccess orderNumber={orderNum} rating={rating} />
+            <HighRatingSuccess orderNumber={orderNum} rating={rating} reviewText={reviewText} />
           ) : (
             <LowRatingSuccess orderNumber={orderNum} />
           )
