@@ -1,11 +1,27 @@
--- Migration 006: Fix RLS policies to allow authenticated admins to view reviews
--- The previous migration only allowed service_role, blocking the Next.js client-side fetch.
+-- Migration 006: Fix RLS policies for reviews and review emails
+-- This allows authenticated admin users to view and manage these tables.
 
--- Drop the old policy if you want, but adding an 'authenticated' policy is enough
-CREATE POLICY "Authenticated users can read customer_reviews"
+-- customer_reviews policies
+DROP POLICY IF EXISTS "Authenticated users can read customer_reviews" ON customer_reviews;
+DROP POLICY IF EXISTS "Authenticated users can delete customer_reviews" ON customer_reviews;
+
+CREATE POLICY "Authenticated users can view customer_reviews"
   ON customer_reviews FOR SELECT
-  USING (auth.role() = 'authenticated');
+  TO authenticated
+  USING (true);
 
-CREATE POLICY "Authenticated users can delete customer_reviews"
-  ON customer_reviews FOR DELETE
-  USING (auth.role() = 'authenticated');
+CREATE POLICY "Authenticated users can manage customer_reviews"
+  ON customer_reviews FOR ALL
+  TO authenticated
+  USING (true);
+
+-- review_emails policies
+CREATE POLICY "Authenticated users can view review_emails"
+  ON review_emails FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Authenticated users can manage review_emails"
+  ON review_emails FOR ALL
+  TO authenticated
+  USING (true);

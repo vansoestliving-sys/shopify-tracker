@@ -64,6 +64,15 @@ function getMinDeliveryDate(): Date {
   return candidate
 }
 
+/** Lowercase + trim; supports `Name <a@b.com>` — same as Apps Script `normalizeEmailForMatch` */
+function normalizeEmailForMatch(raw: string): string {
+  let s = String(raw || '').trim()
+  if (!s) return ''
+  const m = s.match(/<([^>]+@[^>]+)>/i)
+  if (m) s = m[1]!
+  return s.toLowerCase().trim()
+}
+
 export async function POST(request: NextRequest) {
   try {
     const { orderId, email, deliveryDate, formattedDate, submittedAt } = await request.json()
@@ -113,13 +122,49 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // ── 1. Send to Google Apps Script webhook (writes to spreadsheet column AE) ──
+    const orderNumber = orderId.toString().trim().replace(/^#+/, '')
+
+    // If the order exists in Supabase, require email to match the stored customer (same as Apps Script col B)
+    type OrderRow = { id: string; customer_first_name: string | null; customer_email: string | null }
+    let supabaseOrder: OrderRow | null = null
+    if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      const supabase = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY
+      )
+      const { data, error: lookupError } = await supabase
+        .from('orders')
+        .select('id, customer_first_name, customer_email')
+        .eq('shopify_order_number', orderNumber)
+        .maybeSingle()
+
+      if (lookupError) {
+        console.warn('⚠️ delivery-date order lookup failed:', lookupError.message)
+      } else {
+        supabaseOrder = data
+      }
+
+      if (supabaseOrder?.customer_email?.trim()) {
+        if (normalizeEmailForMatch(email) !== normalizeEmailForMatch(supabaseOrder.customer_email)) {
+          return NextResponse.json(
+            {
+              error:
+                'Dit e-mailadres hoort niet bij dit bestelnummer. Gebruik het e-mailadres waarmee u heeft besteld.',
+            },
+            { status: 400 }
+          )
+        }
+      }
+    }
+
+    // ── 1. Send to Google Apps Script webhook (writes to spreadsheet column T / PREF_DATE) ──
     const webhookUrl = process.env.DELIVERY_DATE_WEBHOOK_URL
-    let customerFirstName = ''
+    let customerFirstName = supabaseOrder?.customer_first_name || ''
 
     if (webhookUrl) {
       try {
         const webhookPayload = {
+          type: 'date' as const,
           orderId: orderId.toString().trim(),
           email: email.trim(),
           deliveryDate,
@@ -189,36 +234,24 @@ export async function POST(request: NextRequest) {
     // ── 2. Write delivery_date to Supabase (enables 7-day review cron) ──
     if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
       try {
-        const supabase = createClient(
-          process.env.NEXT_PUBLIC_SUPABASE_URL,
-          process.env.SUPABASE_SERVICE_ROLE_KEY
-        )
-
-        const orderNumber = orderId.toString().trim().replace(/^#+/, '')
-
-        // Find matching order by shopify_order_number
-        const { data: orderRow, error: findError } = await supabase
-          .from('orders')
-          .select('id, customer_first_name, customer_email')
-          .eq('shopify_order_number', orderNumber)
-          .maybeSingle()
-
-        if (findError) {
-          console.warn('⚠️ Could not find order in Supabase:', findError.message)
-        } else if (orderRow) {
+        if (supabaseOrder) {
+          const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL,
+            process.env.SUPABASE_SERVICE_ROLE_KEY
+          )
           const { error: updateError } = await supabase
             .from('orders')
             .update({
               delivery_date: deliveryDate,
               delivery_date_confirmed_at: new Date().toISOString(),
             })
-            .eq('id', orderRow.id)
+            .eq('id', supabaseOrder.id)
 
           if (updateError) {
             console.warn('⚠️ Could not update delivery_date in Supabase:', updateError.message)
           } else {
             console.log(`✅ delivery_date saved to Supabase for order #${orderNumber}`)
-            customerFirstName = orderRow.customer_first_name || ''
+            customerFirstName = supabaseOrder.customer_first_name || ''
           }
         } else {
           console.warn(`⚠️ Order #${orderNumber} not found in Supabase – delivery_date not persisted`)
