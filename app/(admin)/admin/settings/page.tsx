@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Settings, UserPlus, Copy, Check, Trash2, Mail } from 'lucide-react'
+import { Settings, UserPlus, Copy, Check, Trash2, Mail, FileText, Save } from 'lucide-react'
 import Navigation from '@/components/Navigation'
 import { useToast } from '@/hooks/useToast'
 import { ToastContainer } from '@/components/Toast'
@@ -15,6 +15,15 @@ interface AdminUser {
   role: string
   created_at: string
   auth_user_id?: string
+}
+
+interface NotificationTemplate {
+  id: string
+  key: string | null
+  name: string
+  subject: string
+  body_text: string
+  is_system: boolean
 }
 
 export default function AdminSettingsPage() {
@@ -30,6 +39,12 @@ export default function AdminSettingsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [generatedPassword, setGeneratedPassword] = useState<string | null>(null)
   const [newUserId, setNewUserId] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<NotificationTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [templateName, setTemplateName] = useState('')
+  const [templateSubject, setTemplateSubject] = useState('')
+  const [templateBody, setTemplateBody] = useState('')
+  const [savingTemplate, setSavingTemplate] = useState(false)
 
   useEffect(() => {
     checkUser()
@@ -45,6 +60,7 @@ export default function AdminSettingsPage() {
 
     setUser(user)
     fetchAdminUsers()
+    fetchTemplates()
   }
 
   const fetchAdminUsers = async () => {
@@ -59,6 +75,80 @@ export default function AdminSettingsPage() {
       toast.error('Failed to load admin users')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchTemplates = async () => {
+    try {
+      let response = await fetch('/api/admin/notification-templates')
+      let data = await response.json()
+
+      if (response.ok && (!data.templates || data.templates.length === 0)) {
+        response = await fetch('/api/admin/notification-templates', { method: 'PUT' })
+        data = await response.json()
+      }
+
+      if (!response.ok) throw new Error(data.error || 'Failed to fetch templates')
+
+      const loadedTemplates = data.templates || (data.template ? [data.template] : [])
+      setTemplates(loadedTemplates)
+      if (loadedTemplates.length > 0) {
+        selectTemplate(loadedTemplates[0])
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error)
+      toast.error('Failed to load email templates')
+    }
+  }
+
+  const selectTemplate = (template: NotificationTemplate) => {
+    setSelectedTemplateId(template.id)
+    setTemplateName(template.name)
+    setTemplateSubject(template.subject)
+    setTemplateBody(template.body_text)
+  }
+
+  const handleTemplateSelect = (templateId: string) => {
+    const template = templates.find((item) => item.id === templateId)
+    if (template) selectTemplate(template)
+  }
+
+  const handleSaveTemplate = async () => {
+    if (!selectedTemplateId) return
+    setSavingTemplate(true)
+    try {
+      const response = await fetch(`/api/admin/notification-templates/${selectedTemplateId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: templateName,
+          subject: templateSubject,
+          body_text: templateBody,
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to save template')
+      toast.success('Template saved')
+      await fetchTemplates()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to save template')
+    } finally {
+      setSavingTemplate(false)
+    }
+  }
+
+  const handleRestoreTemplate = async () => {
+    setSavingTemplate(true)
+    try {
+      const response = await fetch('/api/admin/notification-templates', { method: 'PUT' })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Failed to restore template')
+      toast.success('Default template restored')
+      await fetchTemplates()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to restore template')
+    } finally {
+      setSavingTemplate(false)
     }
   }
 
@@ -288,6 +378,97 @@ export default function AdminSettingsPage() {
                   </a>
                 </div>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* Email Templates */}
+        <div className="glass-card rounded-xl p-6 mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                <span>E-mail Templates</span>
+              </h2>
+              <p className="text-xs text-gray-600 mt-1">
+                Beheer de tekst voor container leverdatum-wijzigingen.
+              </p>
+            </div>
+            <button
+              onClick={handleRestoreTemplate}
+              disabled={savingTemplate}
+              className="px-3 py-1.5 bg-logo-100 hover:bg-logo-200 text-logo-700 disabled:text-gray-500 text-sm font-medium rounded-md transition-colors"
+            >
+              Herstel standaard
+            </button>
+          </div>
+
+          {templates.length === 0 ? (
+            <div className="text-sm text-gray-500 py-4">Geen templates gevonden.</div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">
+                  Template
+                </label>
+                <select
+                  value={selectedTemplateId}
+                  onChange={(e) => handleTemplateSelect(e.target.value)}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-sm"
+                >
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}{template.is_system ? ' (standaard)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">
+                  Naam
+                </label>
+                <input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">
+                  Onderwerp
+                </label>
+                <input
+                  value={templateSubject}
+                  onChange={(e) => setTemplateSubject(e.target.value)}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1.5 uppercase tracking-wide">
+                  Bericht
+                </label>
+                <textarea
+                  rows={9}
+                  value={templateBody}
+                  onChange={(e) => setTemplateBody(e.target.value)}
+                  className="w-full px-4 py-2.5 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-400 focus:border-primary-400 text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Beschikbare tokens: {'{{first_name}}'}, {'{{order_numbers}}'}, {'{{container_id}}'}, {'{{old_date}}'}, {'{{new_date}}'}
+                </p>
+              </div>
+
+              <button
+                onClick={handleSaveTemplate}
+                disabled={savingTemplate || !selectedTemplateId}
+                className="flex items-center justify-center gap-2 bg-primary-400 hover:bg-primary-500 disabled:bg-gray-400 text-white font-semibold py-2.5 px-5 rounded-lg transition-colors"
+              >
+                <Save className="w-4 h-4" />
+                <span>{savingTemplate ? 'Opslaan...' : 'Template opslaan'}</span>
+              </button>
             </div>
           )}
         </div>

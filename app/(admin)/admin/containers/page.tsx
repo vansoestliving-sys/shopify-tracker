@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Truck, Calendar, Plus, Edit, Trash2, Link as LinkIcon, RefreshCw } from 'lucide-react'
+import { Truck, Calendar, Plus, Edit, Trash2, Link as LinkIcon, RefreshCw, Mail } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
@@ -24,6 +24,13 @@ interface ContainerFormProps {
   container: Container | null
   onClose: () => void
   onSuccess: () => void
+}
+
+interface NotificationTemplate {
+  id: string
+  name: string
+  subject: string
+  body_text: string
 }
 
 export default function ContainersPage() {
@@ -319,13 +326,28 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
   const [products, setProducts] = useState<Array<{id: string, name: string, shopify_product_id: number}>>([])
   const [productQuantities, setProductQuantities] = useState<Record<string, number>>({}) // product_id -> quantity
   const [loadingProducts, setLoadingProducts] = useState(true)
+  const [notifyCustomers, setNotifyCustomers] = useState(false)
+  const [templates, setTemplates] = useState<NotificationTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
+  const [notificationSubject, setNotificationSubject] = useState('')
+  const [notificationBody, setNotificationBody] = useState('')
+  const [recipientCount, setRecipientCount] = useState(0)
+  const [loadingPreview, setLoadingPreview] = useState(false)
+  const etaChanged = Boolean(container && eta && eta !== container.eta?.split('T')[0])
 
   useEffect(() => {
     fetchProducts()
     if (container) {
       fetchContainerProducts(container.id)
+      fetchNotificationTemplates()
     }
   }, [container])
+
+  useEffect(() => {
+    if (container && etaChanged && notifyCustomers) {
+      fetchNotificationPreview()
+    }
+  }, [container, eta, notifyCustomers])
 
   const fetchProducts = async () => {
     try {
@@ -357,6 +379,76 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
     } catch (error) {
       console.error('Error fetching container products:', error)
     }
+  }
+
+  const fetchNotificationTemplates = async () => {
+    try {
+      const response = await fetch('/api/admin/notification-templates')
+      const data = await response.json()
+      const loadedTemplates = data.templates || []
+      setTemplates(loadedTemplates)
+      if (loadedTemplates.length > 0) {
+        setSelectedTemplateId(loadedTemplates[0].id)
+        setNotificationSubject(loadedTemplates[0].subject)
+        setNotificationBody(loadedTemplates[0].body_text)
+      }
+    } catch (error) {
+      console.error('Error fetching notification templates:', error)
+    }
+  }
+
+  const fetchNotificationPreview = async () => {
+    if (!container) return 0
+    setLoadingPreview(true)
+    try {
+      const response = await fetch(`/api/admin/containers/${container.id}/notification-preview`)
+      const data = await response.json()
+      if (response.ok) {
+        setRecipientCount(data.recipientCount || 0)
+        return data.recipientCount || 0
+      } else {
+        setRecipientCount(0)
+        return 0
+      }
+    } catch (error) {
+      console.error('Error fetching notification preview:', error)
+      setRecipientCount(0)
+      return 0
+    } finally {
+      setLoadingPreview(false)
+    }
+  }
+
+  const handleTemplateChange = (templateId: string) => {
+    setSelectedTemplateId(templateId)
+    const template = templates.find((item) => item.id === templateId)
+    if (template) {
+      setNotificationSubject(template.subject)
+      setNotificationBody(template.body_text)
+    }
+  }
+
+  const sendDeliveryChangeNotification = async (savedContainerId: string, expectedCount: number) => {
+    const response = await fetch(`/api/admin/containers/${savedContainerId}/notify-delivery-change`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        confirmed: true,
+        expectedRecipientCount: expectedCount,
+        oldEta: container?.eta?.split('T')[0] || null,
+        newEta: eta,
+        templateId: selectedTemplateId || null,
+        subject: notificationSubject,
+        bodyText: notificationBody,
+      }),
+    })
+
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to send customer notification')
+    }
+
+    return data
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -433,10 +525,19 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
         }
       }
 
+      if (notifyCustomers && etaChanged && savedContainerId) {
+        const latestRecipientCount = recipientCount || await fetchNotificationPreview()
+        if (latestRecipientCount <= 0) {
+          throw new Error('Geen klanten met geldig e-mailadres gevonden voor deze container')
+        }
+        const result = await sendDeliveryChangeNotification(savedContainerId, latestRecipientCount)
+        alert(`Container opgeslagen. ${result.sentCount} klant(en) geinformeerd${result.failedCount ? `, ${result.failedCount} mislukt` : ''}.`)
+      }
+
       onSuccess()
     } catch (error) {
       console.error('Error saving container:', error)
-      alert('Failed to save container')
+      alert(error instanceof Error ? error.message : 'Failed to save container')
     } finally {
       setLoading(false)
     }
@@ -475,6 +576,74 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-400"
             />
           </div>
+
+          {container && etaChanged && (
+            <div className="rounded-lg border border-primary-200 bg-primary-50/60 p-3">
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notifyCustomers}
+                  onChange={(e) => setNotifyCustomers(e.target.checked)}
+                  className="mt-1 rounded border-gray-300 text-primary-400 focus:ring-primary-400"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
+                    <Mail className="w-4 h-4 text-primary-500" />
+                    Klanten informeren over gewijzigde leverdatum
+                  </span>
+                  <span className="block text-xs text-gray-600 mt-1">
+                    Verstuur een nette excuusmail naar klanten die aan deze container gekoppeld zijn.
+                  </span>
+                </span>
+              </label>
+
+              {notifyCustomers && (
+                <div className="mt-3 space-y-3">
+                  <div className="text-xs text-gray-700">
+                    {loadingPreview ? 'Ontvangers laden...' : `${recipientCount} klant(en) met geldig e-mailadres gevonden.`}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+                      Template
+                    </label>
+                    <select
+                      value={selectedTemplateId}
+                      onChange={(e) => handleTemplateChange(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-400 text-sm"
+                    >
+                      {templates.map((template) => (
+                        <option key={template.id} value={template.id}>{template.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+                      Onderwerp
+                    </label>
+                    <input
+                      value={notificationSubject}
+                      onChange={(e) => setNotificationSubject(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-400 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+                      Bericht
+                    </label>
+                    <textarea
+                      rows={7}
+                      value={notificationBody}
+                      onChange={(e) => setNotificationBody(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-400 text-sm"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Tokens: {'{{first_name}}'}, {'{{order_numbers}}'}, {'{{container_id}}'}, {'{{old_date}}'}, {'{{new_date}}'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -574,7 +743,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (notifyCustomers && loadingPreview)}
               className="px-4 py-2 bg-primary-400 text-white rounded-lg hover:bg-primary-500 disabled:bg-gray-400"
             >
               {loading ? 'Opslaan...' : 'Opslaan'}

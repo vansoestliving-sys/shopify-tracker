@@ -2,7 +2,7 @@
 // Shared layout wrapper for all Van Soest Living transactional emails
 // ─────────────────────────────────────────────────────────────────
 
-function baseLayout(content: string): string {
+export function baseLayout(content: string): string {
   return `<!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -67,6 +67,69 @@ function baseLayout(content: string): string {
   </table>
 </body>
 </html>`
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function textToParagraphs(value: string): string {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `
+      <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.6;">
+        ${escapeHtml(paragraph).replace(/\n/g, '<br/>')}
+      </p>
+    `)
+    .join('')
+}
+
+export function deliveryChangeNotificationEmail(opts: {
+  subject: string
+  bodyText: string
+  orderNumbers: string
+  oldDate: string
+  newDate: string
+  containerId: string
+}): { subject: string; html: string } {
+  const html = baseLayout(`
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#1a1a1a;">
+      Update over uw levering
+    </h1>
+    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Bestelling ${escapeHtml(opts.orderNumbers)}</p>
+
+    ${textToParagraphs(opts.bodyText)}
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr>
+        <td style="background:#fff8f3;border:1px solid #ffe4d4;border-radius:12px;padding:18px 20px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#FF914D;text-transform:uppercase;letter-spacing:0.05em;">Nieuwe verwachte leverdatum</p>
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:4px 0;font-size:14px;color:#6b7280;">Was</td>
+              <td align="right" style="padding:4px 0;font-size:14px;color:#374151;font-weight:600;">${escapeHtml(opts.oldDate)}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:14px;color:#6b7280;">Wordt</td>
+              <td align="right" style="padding:4px 0;font-size:16px;color:#1a1a1a;font-weight:700;">${escapeHtml(opts.newDate)}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 4px;font-size:14px;color:#374151;">Met vriendelijke groet,</p>
+    <p style="margin:0;font-size:15px;font-weight:700;color:#FF914D;">Van Soest Living</p>
+  `)
+
+  return { subject: opts.subject, html }
 }
 
 // ─────────────────────────────────────────────────────────────────

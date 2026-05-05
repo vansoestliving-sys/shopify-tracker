@@ -10,7 +10,7 @@ export interface SendEmailOptions {
   replyTo?: string
 }
 
-export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string }> {
+export async function sendEmail(opts: SendEmailOptions): Promise<{ success: boolean; error?: string; id?: string }> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     console.warn('⚠️ RESEND_API_KEY not set — email not sent')
@@ -35,7 +35,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<{ success: bool
     }
 
     console.log('✅ Email sent via Resend:', data?.id, '→', opts.to)
-    return { success: true }
+    return { success: true, id: data?.id }
   } catch (err: any) {
     console.error('Email send failed:', err)
     return { success: false, error: err.message }
