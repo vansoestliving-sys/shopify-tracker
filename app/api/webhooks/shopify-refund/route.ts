@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/server'
 import crypto from 'crypto'
 
+export const dynamic = 'force-dynamic'
+
 // Handle Shopify order refund/cancellation webhook
 export async function POST(request: NextRequest) {
   try {

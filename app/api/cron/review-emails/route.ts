@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/email'
 import { reviewRequestEmail, reviewReminderEmail } from '@/lib/email-templates'
 
+export const dynamic = 'force-dynamic'
+
 /**
  * Cron job: Send review request emails
  * - D+7 after delivery_date: initial review request

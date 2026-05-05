@@ -3,6 +3,8 @@ import { createSupabaseAdminClient } from '@/lib/supabase/server'
 import { fetchShopifyCustomer, fetchShopifyCustomerGraphQL } from '@/lib/shopify/client'
 import crypto from 'crypto'
 
+export const dynamic = 'force-dynamic'
+
 // Verify Shopify webhook signature
 function verifyShopifyWebhook(data: string, hmac: string): boolean {
   const secret = process.env.SHOPIFY_WEBHOOK_SECRET

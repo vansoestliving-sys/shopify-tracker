@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { headers } from 'next/headers'
+
+export const dynamic = 'force-dynamic'
 
 /**
  * Cron job endpoint for automatic order syncing

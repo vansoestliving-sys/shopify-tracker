@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/server'
 
+export const dynamic = 'force-dynamic'
+
 // GET products in a container
 export async function GET(
   request: NextRequest,

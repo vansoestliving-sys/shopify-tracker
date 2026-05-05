@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createSupabaseAdminClient } from '@/lib/supabase/client'
 import { fetchShopifyOrders, fetchShopifyProducts, fetchShopifyCustomer, fetchShopifyCustomerGraphQL } from '@/lib/shopify/client'
 
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
     // Check if Shopify is configured
