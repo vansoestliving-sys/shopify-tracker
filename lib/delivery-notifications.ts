@@ -15,7 +15,7 @@ export const DEFAULT_DELIVERY_CHANGE_TEMPLATE = {
   name: 'Wijziging leverdatum container',
   subject: 'Update over uw levering - bestelling {{order_numbers}}',
   body_text:
-    'Beste {{first_name}},\n\nOnze excuses: de verwachte leverdatum van uw bestelling {{order_numbers}} is gewijzigd doordat de planning van container {{container_id}} is aangepast.\n\nDe eerder verwachte datum was {{old_date}}. De nieuwe verwachte leverdatum is {{new_date}}.\n\nWe begrijpen dat dit vervelend is en houden uw bestelling nauwlettend in de gaten. Zodra er opnieuw iets wijzigt, informeren wij u zo snel mogelijk.',
+    'Beste {{first_name}},\n\nOnze excuses: de verwachte leverdatum van uw bestelling {{order_numbers}} is gewijzigd doordat de planning van container {{container_id}} is aangepast.\n\nDe nieuwe verwachte leverdatum is {{new_date}}.\n\nWe begrijpen dat dit vervelend is en houden uw bestelling nauwlettend in de gaten. Zodra er opnieuw iets wijzigt, informeren wij u zo snel mogelijk.',
 }
 
 export interface DeliveryTemplateValues {

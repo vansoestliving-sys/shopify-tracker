@@ -596,7 +596,10 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
           throw new Error('Geen klanten met geldig e-mailadres gevonden voor deze container')
         }
         const result = await sendDeliveryChangeNotification(savedContainerId, latestRecipientCount)
-        alert(`Container opgeslagen. ${result.sentCount} klant(en) geinformeerd${result.failedCount ? `, ${result.failedCount} mislukt` : ''}.`)
+        const queuedMessage = result.queuedCount
+          ? `, ${result.queuedCount} in wachtrij voor morgen`
+          : ''
+        alert(`Container opgeslagen. ${result.sentCount} klant(en) geinformeerd${queuedMessage}${result.failedCount ? `, ${result.failedCount} mislukt` : ''}.`)
       }
 
       onSuccess()

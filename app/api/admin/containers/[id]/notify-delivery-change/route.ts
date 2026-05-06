@@ -11,6 +11,52 @@ import {
   renderDeliveryTemplate,
 } from '@/lib/delivery-notifications'
 
+export const dynamic = 'force-dynamic'
+
+const DEFAULT_DAILY_DELIVERY_NOTIFICATION_LIMIT = 90
+
+function getDailyDeliveryNotificationLimit() {
+  const rawLimit = process.env.DELIVERY_NOTIFICATION_DAILY_LIMIT || process.env.RESEND_DAILY_LIMIT
+  const parsed = Number(rawLimit)
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_DAILY_DELIVERY_NOTIFICATION_LIMIT
+}
+
+function startOfTodayIso() {
+  const today = new Date()
+  today.setUTCHours(0, 0, 0, 0)
+  return today.toISOString()
+}
+
+function scheduledForOverflow(index: number, dailyLimit: number) {
+  const daysToAdd = Math.floor(index / Math.max(dailyLimit, 1)) + 1
+  const date = new Date()
+  date.setUTCDate(date.getUTCDate() + daysToAdd)
+  date.setUTCHours(7, 15, 0, 0)
+  return date.toISOString()
+}
+
+function isQuotaLikeError(error?: string) {
+  if (!error) return false
+  return /429|quota|rate|limit|too many/i.test(error)
+}
+
+async function getRemainingDeliveryNotificationQuota(supabase: any) {
+  const dailyLimit = getDailyDeliveryNotificationLimit()
+  const { count, error } = await supabase
+    .from('notification_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'sent')
+    .gte('sent_at', startOfTodayIso())
+
+  if (error) throw error
+
+  return {
+    dailyLimit,
+    sentToday: count || 0,
+    remainingToday: Math.max(dailyLimit - (count || 0), 0),
+  }
+}
+
 async function getRecipients(supabase: any, containerId: string) {
   const { data: directOrders, error: directError } = await supabase
     .from('orders')
@@ -151,10 +197,13 @@ export async function POST(
 
     const oldDate = formatDeliveryDateForEmail(oldEta)
     const newDate = formatDeliveryDateForEmail(newEta || container.eta)
+    const quota = await getRemainingDeliveryNotificationQuota(supabase)
     const sent: any[] = []
     const failed: any[] = []
+    const queued: any[] = []
+    let providerQuotaReached = false
 
-    for (const recipient of preview.recipients) {
+    for (const [index, recipient] of preview.recipients.entries()) {
       const values = {
         first_name: recipient.firstName || 'klant',
         order_numbers: recipient.orderNumbers.map((n: string) => `#${n}`).join(', '),
@@ -174,14 +223,7 @@ export async function POST(
         containerId: container.container_id,
         includeDateSummary,
       })
-
-      const result = await sendEmail({
-        to: recipient.email,
-        subject: email.subject,
-        html: email.html,
-      })
-
-      const logPayload = {
+      const logBasePayload = {
         container_id: params.id,
         template_id: templateId,
         recipient_email: recipient.email,
@@ -192,11 +234,68 @@ export async function POST(
         new_eta: newEta || container.eta,
         subject: email.subject,
         body_text: renderedBody,
+        sent_by: auth.user?.email,
+        resend_payload: {
+          to: recipient.email,
+          subject: email.subject,
+          html: email.html,
+        },
+      }
+
+      if (providerQuotaReached || index >= quota.remainingToday) {
+        const scheduledFor = scheduledForOverflow(queued.length, quota.dailyLimit)
+        const { error: queueError } = await supabase.from('notification_logs').insert({
+          ...logBasePayload,
+          status: 'queued',
+          scheduled_for: scheduledFor,
+          sent_at: null,
+        })
+
+        if (queueError) {
+          console.error('Failed to queue notification log:', queueError)
+          failed.push({ email: recipient.email, orderNumbers: recipient.orderNumbers, error: queueError.message })
+        } else {
+          queued.push({ email: recipient.email, orderNumbers: recipient.orderNumbers, scheduledFor })
+        }
+        continue
+      }
+
+      const result = await sendEmail({
+        to: recipient.email,
+        subject: email.subject,
+        html: email.html,
+      })
+
+      if (!result.success && isQuotaLikeError(result.error)) {
+        providerQuotaReached = true
+        const scheduledFor = scheduledForOverflow(queued.length, quota.dailyLimit)
+        const { error: queueError } = await supabase.from('notification_logs').insert({
+          ...logBasePayload,
+          status: 'queued',
+          error_message: result.error || 'Resend quota or rate limit reached',
+          scheduled_for: scheduledFor,
+          sent_at: null,
+          last_attempt_at: new Date().toISOString(),
+          attempts: 1,
+        })
+
+        if (queueError) {
+          console.error('Failed to queue notification after Resend limit:', queueError)
+          failed.push({ email: recipient.email, orderNumbers: recipient.orderNumbers, error: queueError.message })
+        } else {
+          queued.push({ email: recipient.email, orderNumbers: recipient.orderNumbers, scheduledFor })
+        }
+        continue
+      }
+
+      const logPayload = {
+        ...logBasePayload,
         status: result.success ? 'sent' : 'failed',
         resend_email_id: result.id || null,
         error_message: result.error || null,
-        sent_by: auth.user?.email,
         sent_at: new Date().toISOString(),
+        last_attempt_at: new Date().toISOString(),
+        attempts: 1,
       }
 
       const { error: logError } = await supabase.from('notification_logs').insert(logPayload)
@@ -215,9 +314,13 @@ export async function POST(
       success: failed.length === 0,
       sentCount: sent.length,
       failedCount: failed.length,
+      queuedCount: queued.length,
+      dailyLimit: quota.dailyLimit,
+      remainingBeforeSend: quota.remainingToday,
       skipped: preview.skipped,
       sent,
       failed,
+      queued,
     })
   } catch (error: any) {
     console.error('Error sending delivery change notifications:', error)

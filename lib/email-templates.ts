@@ -100,7 +100,7 @@ export function deliveryChangeNotificationEmail(opts: {
   containerId: string
   includeDateSummary?: boolean
 }): { subject: string; html: string } {
-  const dateSummary = opts.includeDateSummary ? `
+  const dateSummary = opts.includeDateSummary && opts.oldDate !== opts.newDate ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
       <tr>
         <td style="background:#fff8f3;border:1px solid #ffe4d4;border-radius:12px;padding:18px 20px;">
