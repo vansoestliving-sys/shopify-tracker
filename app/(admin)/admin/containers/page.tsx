@@ -198,7 +198,70 @@ export default function ContainersPage() {
           />
         )}
 
-        <div className="glass-card rounded-lg overflow-hidden">
+        <div className="md:hidden space-y-3">
+          {containers.length === 0 ? (
+            <div className="glass-card rounded-lg p-5 text-center text-sm text-gray-500">
+              No containers yet. Click "Add Container" to create one.
+            </div>
+          ) : (
+            containers.map((container) => (
+              <div key={container.id} className="glass-card rounded-lg p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Truck className="w-5 h-5 flex-shrink-0 text-primary-400" />
+                      <p className="font-semibold text-gray-900 truncate">{container.container_id}</p>
+                    </div>
+                    <div className="mt-2 flex items-center gap-2 text-sm text-gray-700">
+                      <Calendar className="w-4 h-4 flex-shrink-0 text-gray-400" />
+                      <span>{formatDate(container.eta)}</span>
+                    </div>
+                  </div>
+                  <span className={`flex-shrink-0 px-2 py-1 text-xs font-semibold rounded-full ${
+                    container.status === 'arrived' ? 'bg-green-100 text-green-800' :
+                    container.status === 'delayed' ? 'bg-red-100 text-red-800' :
+                    container.status === 'in_transit' ? 'bg-blue-100 text-blue-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {container.status.replace('_', ' ').toUpperCase()}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => handleLinkOrders(container.id)}
+                    className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-primary-50 px-2 py-2 text-xs font-semibold text-primary-700 transition-colors hover:bg-primary-100"
+                    title="Link Orders"
+                  >
+                    <LinkIcon className="w-4 h-4" />
+                    <span>Link</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingContainer(container)
+                      setShowContainerForm(true)
+                    }}
+                    className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-blue-50 px-2 py-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+                    title="Edit"
+                  >
+                    <Edit className="w-4 h-4" />
+                    <span>Edit</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteContainer(container.id)}
+                    className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-md bg-red-50 px-2 py-2 text-xs font-semibold text-red-700 transition-colors hover:bg-red-100"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block glass-card rounded-lg overflow-hidden">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50/80">
               <tr>
