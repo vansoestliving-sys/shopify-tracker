@@ -98,15 +98,9 @@ export function deliveryChangeNotificationEmail(opts: {
   oldDate: string
   newDate: string
   containerId: string
+  includeDateSummary?: boolean
 }): { subject: string; html: string } {
-  const html = baseLayout(`
-    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#1a1a1a;">
-      Update over uw levering
-    </h1>
-    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Bestelling ${escapeHtml(opts.orderNumbers)}</p>
-
-    ${textToParagraphs(opts.bodyText)}
-
+  const dateSummary = opts.includeDateSummary ? `
     <table width="100%" cellpadding="0" cellspacing="0" style="margin:24px 0;">
       <tr>
         <td style="background:#fff8f3;border:1px solid #ffe4d4;border-radius:12px;padding:18px 20px;">
@@ -124,6 +118,17 @@ export function deliveryChangeNotificationEmail(opts: {
         </td>
       </tr>
     </table>
+  ` : ''
+
+  const html = baseLayout(`
+    <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#1a1a1a;">
+      Update over uw levering
+    </h1>
+    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;">Bestelling ${escapeHtml(opts.orderNumbers)}</p>
+
+    ${textToParagraphs(opts.bodyText)}
+
+    ${dateSummary}
 
     <p style="margin:0 0 4px;font-size:14px;color:#374151;">Met vriendelijke groet,</p>
     <p style="margin:0;font-size:15px;font-weight:700;color:#FF914D;">Van Soest Living</p>

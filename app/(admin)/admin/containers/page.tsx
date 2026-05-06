@@ -395,6 +395,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
   const [notificationSubject, setNotificationSubject] = useState('')
   const [notificationBody, setNotificationBody] = useState('')
   const [recipientCount, setRecipientCount] = useState(0)
+  const [includeDateSummary, setIncludeDateSummary] = useState(false)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const etaChanged = Boolean(container && eta && eta !== container.eta?.split('T')[0])
 
@@ -407,7 +408,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
   }, [container])
 
   useEffect(() => {
-    if (container && etaChanged && notifyCustomers) {
+    if (container && notifyCustomers) {
       fetchNotificationPreview()
     }
   }, [container, eta, notifyCustomers])
@@ -500,6 +501,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
         expectedRecipientCount: expectedCount,
         oldEta: container?.eta?.split('T')[0] || null,
         newEta: eta,
+        includeDateSummary,
         templateId: selectedTemplateId || null,
         subject: notificationSubject,
         bodyText: notificationBody,
@@ -588,7 +590,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
         }
       }
 
-      if (notifyCustomers && etaChanged && savedContainerId) {
+      if (notifyCustomers && savedContainerId) {
         const latestRecipientCount = recipientCount || await fetchNotificationPreview()
         if (latestRecipientCount <= 0) {
           throw new Error('Geen klanten met geldig e-mailadres gevonden voor deze container')
@@ -640,7 +642,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
             />
           </div>
 
-          {container && etaChanged && (
+          {container && (
             <div className="rounded-lg border-2 border-primary-200 bg-primary-50/70 p-3 sm:p-4">
               <div className="flex items-start gap-2.5">
                 <div className="mt-0.5 rounded-md bg-white p-1.5 text-primary-500 shadow-sm">
@@ -648,10 +650,12 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-gray-900">
-                    Leverdatum is gewijzigd
+                    {etaChanged ? 'Leverdatum is gewijzigd' : 'Klantupdate versturen'}
                   </p>
                   <p className="text-xs text-gray-600 mt-1">
-                    Kies of klanten direct een nette excuusmail moeten ontvangen.
+                    {etaChanged
+                      ? 'Kies of klanten direct een nette excuusmail moeten ontvangen.'
+                      : 'Gebruik dit als de datum al eerder is aangepast en klanten alsnog geinformeerd moeten worden.'}
                   </p>
                 </div>
               </div>
@@ -666,7 +670,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
                       : 'border-transparent bg-white/50 text-gray-600 hover:bg-white'
                   }`}
                 >
-                  <span>Alleen datum opslaan</span>
+                  <span>{etaChanged ? 'Alleen datum opslaan' : 'Geen mail versturen'}</span>
                   {!notifyCustomers && <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-primary-500" />}
                 </button>
                 <button
@@ -678,7 +682,7 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
                       : 'border-transparent bg-white/50 text-gray-600 hover:bg-white'
                   }`}
                 >
-                  <span>Datum opslaan + klanten mailen</span>
+                  <span>{etaChanged ? 'Datum opslaan + klanten mailen' : 'Klanten mailen'}</span>
                   {notifyCustomers && <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-primary-500" />}
                 </button>
               </div>
@@ -688,6 +692,19 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
                   <div className="text-xs text-gray-700">
                     {loadingPreview ? 'Ontvangers laden...' : `${recipientCount} klant(en) met geldig e-mailadres gevonden.`}
                   </div>
+                  {etaChanged && (
+                    <label className="flex items-start gap-2 rounded-md bg-white/70 p-2 text-xs text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={includeDateSummary}
+                        onChange={(e) => setIncludeDateSummary(e.target.checked)}
+                        className="mt-0.5 rounded border-gray-300 text-primary-400 focus:ring-primary-400"
+                      />
+                      <span>
+                        Toon extra blok met oude en nieuwe datum in de e-mail.
+                      </span>
+                    </label>
+                  )}
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
                       Template

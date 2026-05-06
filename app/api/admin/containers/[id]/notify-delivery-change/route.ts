@@ -94,14 +94,11 @@ export async function POST(
     const body = await request.json()
     const oldEta = body.oldEta || null
     const newEta = body.newEta || null
+    const includeDateSummary = body.includeDateSummary === true
     const expectedRecipientCount = Number(body.expectedRecipientCount)
 
     if (!body.confirmed) {
       return NextResponse.json({ error: 'Confirmation is required before sending' }, { status: 400 })
-    }
-
-    if (oldEta && newEta && oldEta === newEta) {
-      return NextResponse.json({ error: 'Delivery date did not change' }, { status: 400 })
     }
 
     const supabase = createSupabaseAdminClient()
@@ -175,6 +172,7 @@ export async function POST(
         oldDate,
         newDate,
         containerId: container.container_id,
+        includeDateSummary,
       })
 
       const result = await sendEmail({
