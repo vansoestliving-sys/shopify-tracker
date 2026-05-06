@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Truck, Calendar, Plus, Edit, Trash2, Link as LinkIcon, RefreshCw, Mail } from 'lucide-react'
+import { Truck, Calendar, Plus, Edit, Trash2, Link as LinkIcon, RefreshCw, Mail, CheckCircle2 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
@@ -578,24 +578,47 @@ function ContainerForm({ container, onClose, onSuccess }: ContainerFormProps) {
           </div>
 
           {container && etaChanged && (
-            <div className="rounded-lg border border-primary-200 bg-primary-50/60 p-3">
-              <label className="flex items-start gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notifyCustomers}
-                  onChange={(e) => setNotifyCustomers(e.target.checked)}
-                  className="mt-1 rounded border-gray-300 text-primary-400 focus:ring-primary-400"
-                />
-                <span>
-                  <span className="flex items-center gap-1.5 text-sm font-semibold text-gray-900">
-                    <Mail className="w-4 h-4 text-primary-500" />
-                    Klanten informeren over gewijzigde leverdatum
-                  </span>
-                  <span className="block text-xs text-gray-600 mt-1">
-                    Verstuur een nette excuusmail naar klanten die aan deze container gekoppeld zijn.
-                  </span>
-                </span>
-              </label>
+            <div className="rounded-lg border-2 border-primary-200 bg-primary-50/70 p-3 sm:p-4">
+              <div className="flex items-start gap-2.5">
+                <div className="mt-0.5 rounded-md bg-white p-1.5 text-primary-500 shadow-sm">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Leverdatum is gewijzigd
+                  </p>
+                  <p className="text-xs text-gray-600 mt-1">
+                    Kies of klanten direct een nette excuusmail moeten ontvangen.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNotifyCustomers(false)}
+                  className={`flex min-h-[48px] items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
+                    !notifyCustomers
+                      ? 'border-gray-300 bg-white text-gray-900 shadow-sm'
+                      : 'border-transparent bg-white/50 text-gray-600 hover:bg-white'
+                  }`}
+                >
+                  <span>Alleen datum opslaan</span>
+                  {!notifyCustomers && <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-primary-500" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotifyCustomers(true)}
+                  className={`flex min-h-[48px] items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-left text-sm font-semibold transition-colors ${
+                    notifyCustomers
+                      ? 'border-primary-400 bg-white text-primary-700 shadow-sm ring-2 ring-primary-100'
+                      : 'border-transparent bg-white/50 text-gray-600 hover:bg-white'
+                  }`}
+                >
+                  <span>Datum opslaan + klanten mailen</span>
+                  {notifyCustomers && <CheckCircle2 className="w-5 h-5 flex-shrink-0 text-primary-500" />}
+                </button>
+              </div>
 
               {notifyCustomers && (
                 <div className="mt-3 space-y-3">
