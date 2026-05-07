@@ -5,6 +5,17 @@ import { reviewRequestEmail, reviewReminderEmail } from '@/lib/email-templates'
 
 export const dynamic = 'force-dynamic'
 
+const PRODUCTION_APP_URL = 'https://app.vansoestliving.nl'
+const OLD_TRACKER_DOMAIN = 'tracker.vansoestliving.nl'
+
+function getReviewBaseUrl() {
+  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, '')
+  if (!configuredUrl || configuredUrl.includes(OLD_TRACKER_DOMAIN)) {
+    return PRODUCTION_APP_URL
+  }
+  return configuredUrl
+}
+
 /**
  * Cron job: Send review request emails
  * - D+7 after delivery_date: initial review request
@@ -33,7 +44,7 @@ export async function GET(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     )
 
-    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://tracker.vansoestliving.nl'
+    const baseUrl = getReviewBaseUrl()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
