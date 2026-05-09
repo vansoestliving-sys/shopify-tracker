@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2 } from 'lucide-react'
+import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2, Mail } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
@@ -62,6 +62,7 @@ export default function OrdersPage() {
   const [showCSVImportModal, setShowCSVImportModal] = useState(false)
   const [selectedOrders, setSelectedOrders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
+  const [resendingReviewId, setResendingReviewId] = useState<string | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -231,6 +232,40 @@ export default function OrdersPage() {
     } catch (error: any) {
       console.error('Delete error:', error)
       toast.error(`Fout bij verwijderen: ${error.message}`)
+    }
+  }
+
+  const handleResendReviewEmail = async (order: Order) => {
+    if (!order.customer_email) {
+      alert('Deze bestelling heeft geen e-mailadres.')
+      return
+    }
+
+    if (!confirm(`Review e-mail opnieuw versturen naar ${order.customer_email}?`)) {
+      return
+    }
+
+    setResendingReviewId(order.id)
+    try {
+      const response = await fetch('/api/admin/review-emails/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          emailType: 'initial',
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Review e-mail kon niet opnieuw worden verstuurd')
+      }
+
+      alert(`Review e-mail opnieuw verstuurd naar ${data.customerEmail}.`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Review e-mail kon niet opnieuw worden verstuurd')
+    } finally {
+      setResendingReviewId(null)
     }
   }
 
@@ -510,6 +545,18 @@ export default function OrdersPage() {
                             title="Bewerk Bestelling"
                           >
                             <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleResendReviewEmail(order)}
+                            disabled={resendingReviewId === order.id || !order.customer_email}
+                            className="text-primary-400 hover:text-primary-600 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed"
+                            title="Review e-mail opnieuw versturen"
+                          >
+                            {resendingReviewId === order.id ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Mail className="w-4 h-4" />
+                            )}
                           </button>
                           <button
                             onClick={() => handleDeleteOrder(order.id, order.shopify_order_number || 'N/A')}

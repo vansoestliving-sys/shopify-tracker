@@ -2,19 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { sendEmail } from '@/lib/email'
 import { reviewRequestEmail, reviewReminderEmail } from '@/lib/email-templates'
+import { buildReviewUrl } from '@/lib/review-email-links'
 
 export const dynamic = 'force-dynamic'
-
-const PRODUCTION_APP_URL = 'https://app.vansoestliving.nl'
-const OLD_TRACKER_DOMAIN = 'tracker.vansoestliving.nl'
-
-function getReviewBaseUrl() {
-  const configuredUrl = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, '')
-  if (!configuredUrl || configuredUrl.includes(OLD_TRACKER_DOMAIN)) {
-    return PRODUCTION_APP_URL
-  }
-  return configuredUrl
-}
 
 /**
  * Cron job: Send review request emails
@@ -44,7 +34,6 @@ export async function GET(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     )
 
-    const baseUrl = getReviewBaseUrl()
     const today = new Date()
     today.setHours(0, 0, 0, 0)
 
@@ -125,7 +114,7 @@ export async function GET(request: NextRequest) {
       }
       // If no order_items found, we still send (can't be sure it's DPD-only)
 
-      const reviewUrl = `${baseUrl}/review?order=${order.shopify_order_number}&email=${encodeURIComponent(order.customer_email)}`
+      const reviewUrl = buildReviewUrl(order.shopify_order_number, order.customer_email)
 
       // ── Initial email: delivery_date was exactly 7-9 days ago ──
       // (d10Str < deliveryDate <= d7Str means: 7..9 days old → send initial)
