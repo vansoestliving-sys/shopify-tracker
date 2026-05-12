@@ -18,6 +18,13 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (rating <= 3 && (!reviewText || reviewText.trim().length < 5)) {
+      return NextResponse.json(
+        { error: 'Vertel ons kort wat er beter kan.' },
+        { status: 400 }
+      )
+    }
+
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       return NextResponse.json({ error: 'Server configuration error.' }, { status: 500 })
     }

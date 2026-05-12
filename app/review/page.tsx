@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useMemo, Suspense } from 'react'
+import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { CheckCircle, AlertCircle, Loader2, Star, ExternalLink } from 'lucide-react'
+import { CheckCircle, AlertCircle, Loader2, Star } from 'lucide-react'
 import Logo from '@/components/Logo'
 
 const TRUSTPILOT_URL = 'https://nl.trustpilot.com/review/www.vansoestliving.nl'
@@ -104,70 +104,6 @@ function LowRatingSuccess({ orderNumber }: { orderNumber: string }) {
   )
 }
 
-// ── Success: High rating (4-5) ─────────────────────────────────────────────
-function HighRatingSuccess({ orderNumber, rating, reviewText }: { orderNumber: string; rating: number; reviewText: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleTrustpilotClick = () => {
-    if (reviewText && reviewText.trim() !== '') {
-      navigator.clipboard.writeText(reviewText).catch(err => console.error('Failed to copy', err))
-      setCopied(true)
-    }
-  }
-  return (
-    <div className="glass-card rounded-2xl p-10 shadow-2xl text-center max-w-xl mx-auto">
-      <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5">
-        <CheckCircle className="w-12 h-12 text-green-500" />
-      </div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">
-        Wat fijn dat u tevreden bent! 🎉
-      </h1>
-      {orderNumber && (
-        <p className="text-sm text-gray-500 mb-4">Bestelling #{orderNumber}</p>
-      )}
-      <p className="text-gray-600 leading-relaxed mb-6">
-        Bedankt voor uw {rating === 5 ? 'geweldige' : 'positieve'} beoordeling! Het zou ons
-        enorm helpen als u uw ervaring ook deelt op Trustpilot, zodat andere klanten hiervan
-        kunnen profiteren.
-      </p>
-
-      {copied && (
-        <div className="bg-green-50 border border-green-200 text-green-800 text-xs py-3 px-4 rounded-xl mb-4 text-left shadow-sm flex gap-2">
-          <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
-          <p className="leading-relaxed">
-            <strong>Tekst gekopieerd!</strong><br/>Uw geschreven review staat nu op uw klembord. U hoeft het op de volgende pagina alleen nog maar te plakken.
-          </p>
-        </div>
-      )}
-
-      <a
-        href={TRUSTPILOT_URL}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={handleTrustpilotClick}
-        id="trustpilot-cta"
-        className="inline-flex items-center gap-2 bg-gradient-to-r from-[#00b67a] to-[#00a569] hover:from-[#00a569] hover:to-[#009560] text-white font-bold py-4 px-8 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 mb-6"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="white" aria-hidden="true">
-          <path d="M12 0l3.09 6.26L22 7.27l-5 4.87 1.18 6.88L12 15.77l-6.18 3.25L7 12.14 2 7.27l6.91-1.01L12 0z" />
-        </svg>
-        Review achterlaten op Trustpilot
-        <ExternalLink className="w-4 h-4 opacity-80" />
-      </a>
-
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left">
-        <p className="text-xs font-bold text-amber-800 mb-1">🎁 Vergeet niet mee te doen</p>
-        <p className="text-xs text-amber-700">
-          U doet automatisch mee aan onze maandelijkse verloting van €100. Wij laten u weten
-          als u wint!
-        </p>
-      </div>
-
-      <p className="mt-6 text-xs text-gray-400">Met vriendelijke groet, Van Soest Living</p>
-    </div>
-  )
-}
-
 // ── Main Review Form ────────────────────────────────────────────────────────
 function ReviewForm() {
   const searchParams = useSearchParams()
@@ -182,35 +118,59 @@ function ReviewForm() {
   const [orderNum, setOrderNum] = useState(prefillOrder)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [redirectToTrustpilot, setRedirectToTrustpilot] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const isValid = rating > 0 && reviewText.trim().length >= 5
+  const isLowRating = rating > 0 && rating <= 3
+  const canSubmitLowRating = isLowRating && reviewText.trim().length >= 5
+
+  const saveReview = async (selectedRating: number, text: string) => {
+    const res = await fetch('/api/review', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderNumber: orderNum || null,
+        customerName: name.trim() || null,
+        customerEmail: (email || 'anonymous@vansoestliving.nl').trim(),
+        rating: selectedRating,
+        reviewText: text.trim(),
+      }),
+    })
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Er is iets misgegaan')
+    return data
+  }
+
+  const redirectHappyCustomer = async (selectedRating: number) => {
+    setSubmitting(true)
+    setError(null)
+    try {
+      await saveReview(selectedRating, '')
+    } catch (err) {
+      console.error('Could not save positive review before Trustpilot redirect:', err)
+    } finally {
+      window.location.href = TRUSTPILOT_URL
+    }
+  }
+
+  const handleRatingChange = (nextRating: number) => {
+    if (submitting) return
+    setRating(nextRating)
+    setError(null)
+    if (nextRating >= 4) {
+      void redirectHappyCustomer(nextRating)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isValid) return
+    if (!canSubmitLowRating) return
 
     setSubmitting(true)
     setError(null)
 
     try {
-      const res = await fetch('/api/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderNumber: orderNum || null,
-          customerName: name.trim() || null,
-          customerEmail: (email || 'anonymous@vansoestliving.nl').trim(),
-          rating,
-          reviewText: reviewText.trim(),
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Er is iets misgegaan')
-
-      setRedirectToTrustpilot(data.redirectToTrustpilot)
+      await saveReview(rating, reviewText)
       setSubmitted(true)
     } catch (err: any) {
       setError(err.message || 'Er is iets misgegaan. Probeer het opnieuw.')
@@ -230,11 +190,7 @@ function ReviewForm() {
         </div>
 
         {submitted ? (
-          redirectToTrustpilot ? (
-            <HighRatingSuccess orderNumber={orderNum} rating={rating} reviewText={reviewText} />
-          ) : (
-            <LowRatingSuccess orderNumber={orderNum} />
-          )
+          <LowRatingSuccess orderNumber={orderNum} />
         ) : (
           <>
             {/* Header card */}
@@ -279,34 +235,42 @@ function ReviewForm() {
                   <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
                     Uw beoordeling <span className="text-primary-500">*</span>
                   </label>
-                  <StarRating value={rating} onChange={setRating} disabled={submitting} />
+                  <StarRating value={rating} onChange={handleRatingChange} disabled={submitting} />
                   {rating === 0 && (
                     <p className="text-xs text-gray-400 mt-1">Klik op een ster om te beoordelen</p>
+                  )}
+                  {submitting && rating >= 4 && (
+                    <p className="text-xs text-green-700 mt-2 flex items-center gap-2">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      U wordt doorgestuurd naar Trustpilot...
+                    </p>
                   )}
                 </div>
 
                 {/* Review text */}
-                <div>
-                  <label
-                    htmlFor="reviewText"
-                    className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide"
-                  >
-                    Uw ervaring <span className="text-primary-500">*</span>
-                  </label>
-                  <textarea
-                    id="reviewText"
-                    value={reviewText}
-                    onChange={(e) => setReviewText(e.target.value)}
-                    rows={5}
-                    required
-                    placeholder="Deel uw ervaring met ons product en onze service…"
-                    disabled={submitting}
-                    className="form-input resize-none"
-                  />
-                  <p className="text-xs text-gray-400 mt-1">
-                    Minimaal 5 tekens ({reviewText.length} ingevuld)
-                  </p>
-                </div>
+                {isLowRating && (
+                  <div>
+                    <label
+                      htmlFor="reviewText"
+                      className="block text-xs font-semibold text-gray-700 mb-2 uppercase tracking-wide"
+                    >
+                      Uw ervaring <span className="text-primary-500">*</span>
+                    </label>
+                    <textarea
+                      id="reviewText"
+                      value={reviewText}
+                      onChange={(e) => setReviewText(e.target.value)}
+                      rows={5}
+                      required
+                      placeholder="Vertel ons wat er beter kan..."
+                      disabled={submitting}
+                      className="form-input resize-none"
+                    />
+                    <p className="text-xs text-gray-400 mt-1">
+                      Minimaal 5 tekens ({reviewText.length} ingevuld)
+                    </p>
+                  </div>
+                )}
 
                 {/* Name */}
                 <div>
@@ -378,7 +342,7 @@ function ReviewForm() {
                 <button
                   type="submit"
                   id="submit-review"
-                  disabled={submitting || !isValid}
+                  disabled={submitting || !canSubmitLowRating}
                   className="w-full bg-gradient-to-r from-primary-400 to-primary-500 hover:from-primary-500 hover:to-primary-600 disabled:from-gray-300 disabled:to-gray-300 disabled:cursor-not-allowed text-white font-semibold py-3.5 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 disabled:transform-none flex items-center justify-center gap-2"
                 >
                   {submitting ? (
