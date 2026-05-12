@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, Suspense } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { CheckCircle, AlertCircle, Loader2, Star, ExternalLink } from 'lucide-react'
 import Logo from '@/components/Logo'
@@ -116,6 +116,20 @@ function ReviewForm() {
 
   const isLowRating = rating > 0 && rating <= 3
   const canSubmitLowRating = isLowRating && reviewText.trim().length >= 5
+
+  useEffect(() => {
+    const resetRedirectState = () => {
+      setSubmitting(false)
+    }
+
+    window.addEventListener('pageshow', resetRedirectState)
+    window.addEventListener('focus', resetRedirectState)
+
+    return () => {
+      window.removeEventListener('pageshow', resetRedirectState)
+      window.removeEventListener('focus', resetRedirectState)
+    }
+  }, [])
 
   const saveReview = async (selectedRating: number, text: string) => {
     const res = await fetch('/api/review', {

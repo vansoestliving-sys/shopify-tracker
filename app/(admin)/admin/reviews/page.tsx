@@ -54,6 +54,75 @@ function RatingBadge({ rating }: { rating: number }) {
   )
 }
 
+function TrustpilotStatus({ review }: { review: CustomerReview }) {
+  return review.redirect_to_trustpilot ? (
+    <a
+      href="https://nl.trustpilot.com/review/www.vansoestliving.nl"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-xs text-[#00b67a] font-semibold hover:underline"
+    >
+      <ExternalLink className="w-3 h-3" />
+      Doorgestuurd
+    </a>
+  ) : (
+    <span className="text-xs text-gray-400">Intern</span>
+  )
+}
+
+function ReviewCard({
+  review,
+  onDelete,
+}: {
+  review: CustomerReview
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-primary-500">
+              {review.shopify_order_number ? `#${review.shopify_order_number}` : 'Geen bestelnummer'}
+            </p>
+            <RatingBadge rating={review.rating} />
+          </div>
+          <p className="mt-1 text-xs text-gray-400">
+            {new Date(review.submitted_at).toLocaleDateString('nl-NL', {
+              day: 'numeric', month: 'short', year: 'numeric'
+            })}
+          </p>
+        </div>
+        <button
+          onClick={() => onDelete(review.id)}
+          title="Review verwijderen"
+          className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Klant</p>
+          <p className="truncate text-sm font-medium text-gray-700">{review.customer_name || 'Onbekend'}</p>
+          <p className="break-all text-xs text-gray-400">{review.customer_email}</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <StarDisplay rating={review.rating} />
+          <TrustpilotStatus review={review} />
+        </div>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Review</p>
+          <p className="mt-1 text-sm leading-relaxed text-gray-600">
+            {review.review_text || <span className="text-gray-300 italic">Geen tekst</span>}
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ReviewsAdminPage() {
   const router = useRouter()
   const supabase = createClientComponentClient({
@@ -122,10 +191,10 @@ export default function ReviewsAdminPage() {
     <div className="min-h-screen">
       <Navigation user={user || { email: '' }} onLogout={() => router.push('/')} isAdmin={true} />
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-8">
 
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Klantreviews</h1>
             <p className="text-sm text-gray-500 mt-1">
@@ -144,7 +213,7 @@ export default function ReviewsAdminPage() {
         </div>
 
         {/* Stats cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <div className="glass-card rounded-xl p-4">
             <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Totaal Reviews</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{reviews.length}</p>
@@ -167,12 +236,12 @@ export default function ReviewsAdminPage() {
         </div>
 
         {/* Filter tabs */}
-        <div className="flex gap-2 mb-4">
+        <div className="grid grid-cols-3 gap-2 mb-4 sm:flex">
           {(['all', 'positive', 'negative'] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              className={`px-2 sm:px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                 filter === f
                   ? 'bg-primary-400 text-white shadow-sm'
                   : 'bg-white text-gray-600 hover:bg-primary-50 hover:text-primary-700 border border-gray-200'
@@ -183,7 +252,7 @@ export default function ReviewsAdminPage() {
           ))}
         </div>
 
-        {/* Reviews table */}
+        {/* Reviews list */}
         <div className="glass-card rounded-xl overflow-hidden shadow-sm">
           {loading ? (
             <div className="py-16 text-center text-gray-400 text-sm">Laden…</div>
@@ -196,75 +265,74 @@ export default function ReviewsAdminPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-100">
-                <thead className="bg-gradient-to-r from-gray-50/90 to-gray-50/70">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Datum</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bestelling</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Klant</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Score</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sentiment</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Trustpilot</th>
-                    <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Review</th>
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Acties</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
-                  {filteredReviews.map((review) => (
-                    <tr key={review.id} className="hover:bg-gray-50/60 transition-colors">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(review.submitted_at).toLocaleDateString('nl-NL', {
-                          day: 'numeric', month: 'short', year: 'numeric'
-                        })}
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-primary-500">
-                        {review.shopify_order_number ? `#${review.shopify_order_number}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
-                        <p className="font-medium truncate max-w-[140px]">{review.customer_name || '—'}</p>
-                        <p className="text-xs text-gray-400 truncate max-w-[140px]">{review.customer_email}</p>
-                      </td>
-                      <td className="px-4 py-3">
-                        <StarDisplay rating={review.rating} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <RatingBadge rating={review.rating} />
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        {review.redirect_to_trustpilot ? (
-                          <a
-                            href="https://nl.trustpilot.com/review/www.vansoestliving.nl"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-xs text-[#00b67a] font-semibold hover:underline"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                            Doorgestuurd
-                          </a>
-                        ) : (
-                          <span className="text-xs text-gray-400">Intern</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                        <p className="line-clamp-3 leading-relaxed">
-                          {review.review_text || <span className="text-gray-300 italic">Geen tekst</span>}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-right">
-                        <button
-                          onClick={() => handleDeleteReview(review.id)}
-                          title="Review verwijderen"
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
+            <>
+              <div className="space-y-3 p-3 md:hidden">
+                {filteredReviews.map((review) => (
+                  <ReviewCard
+                    key={review.id}
+                    review={review}
+                    onDelete={handleDeleteReview}
+                  />
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="min-w-full divide-y divide-gray-100">
+                  <thead className="bg-gradient-to-r from-gray-50/90 to-gray-50/70">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Datum</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Bestelling</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Klant</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Score</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Sentiment</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Trustpilot</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider w-64">Review</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Acties</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-100">
+                    {filteredReviews.map((review) => (
+                      <tr key={review.id} className="hover:bg-gray-50/60 transition-colors">
+                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                          {new Date(review.submitted_at).toLocaleDateString('nl-NL', {
+                            day: 'numeric', month: 'short', year: 'numeric'
+                          })}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-primary-500">
+                          {review.shopify_order_number ? `#${review.shopify_order_number}` : '—'}
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-700">
+                          <p className="font-medium truncate max-w-[140px]">{review.customer_name || '—'}</p>
+                          <p className="text-xs text-gray-400 truncate max-w-[140px]">{review.customer_email}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StarDisplay rating={review.rating} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <RatingBadge rating={review.rating} />
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap">
+                          <TrustpilotStatus review={review} />
+                        </td>
+                        <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
+                          <p className="line-clamp-3 leading-relaxed">
+                            {review.review_text || <span className="text-gray-300 italic">Geen tekst</span>}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-right">
+                          <button
+                            onClick={() => handleDeleteReview(review.id)}
+                            title="Review verwijderen"
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
 
