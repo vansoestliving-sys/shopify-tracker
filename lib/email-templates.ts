@@ -235,14 +235,13 @@ export function reviewRequestEmail(opts: {
       </tr>
     </table>
 
-    <!-- Prize draw mention – framed as thank-you loyalty reward, NOT quid pro quo -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
       <tr>
         <td style="background:#fff8f3;border-left:4px solid #FF914D;border-radius:8px;padding:16px 20px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#FF914D;">🎁 Maandelijkse waardering</p>
+          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#FF914D;">Uw eerlijke mening telt</p>
           <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
-            Als blijk van onze waardering verloten wij maandelijks <strong>€100</strong> onder klanten
-            die hun eerlijke feedback achterlaten via ons formulier. Deelname is gratis en vrijblijvend.
+            Positief of kritisch: elke review helpt ons verbeteren en helpt andere klanten
+            een goede keuze te maken.
           </p>
         </td>
       </tr>
@@ -296,14 +295,13 @@ export function reviewReminderEmail(opts: {
       </tr>
     </table>
 
-    <!-- Prize reminder -->
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
       <tr>
         <td style="background:#fff8f3;border-left:4px solid #FF914D;border-radius:8px;padding:16px 20px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#FF914D;">🎁 Doe nog mee</p>
+          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#FF914D;">Uw eerlijke mening telt</p>
           <p style="margin:0;font-size:13px;color:#374151;line-height:1.5;">
-            Vergeet niet: klanten die hun feedback achterlaten via ons formulier maken kans op
-            <strong>€100</strong> in onze maandelijkse verloting. Dit is de laatste herinnering.
+            We waarderen elke ervaring, positief of kritisch. Uw feedback helpt ons onze
+            service verder te verbeteren.
           </p>
         </td>
       </tr>

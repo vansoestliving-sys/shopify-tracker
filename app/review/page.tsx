@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { CheckCircle, AlertCircle, Loader2, Star } from 'lucide-react'
+import { CheckCircle, AlertCircle, Loader2, Star, ExternalLink } from 'lucide-react'
 import Logo from '@/components/Logo'
 
 const TRUSTPILOT_URL = 'https://nl.trustpilot.com/review/www.vansoestliving.nl'
@@ -20,7 +20,7 @@ function StarRating({
   const [hovered, setHovered] = useState(0)
 
   return (
-    <div className="flex items-center gap-2 my-2">
+    <div className="flex flex-wrap items-center gap-2 my-2">
       {[1, 2, 3, 4, 5].map((star) => {
         const filled = star <= (hovered || value)
         return (
@@ -32,10 +32,10 @@ function StarRating({
             onMouseLeave={() => setHovered(0)}
             onClick={() => onChange(star)}
             aria-label={`${star} ster${star > 1 ? 'ren' : ''}`}
-            className="transition-transform duration-100 hover:scale-110 disabled:cursor-not-allowed"
+            className="p-1 -m-1 transition-transform duration-100 hover:scale-110 disabled:cursor-not-allowed"
           >
             <Star
-              className="w-10 h-10"
+              className="w-9 h-9 sm:w-10 sm:h-10"
               style={{
                 fill: filled ? '#FF914D' : 'none',
                 stroke: filled ? '#FF914D' : '#d1d5db',
@@ -92,12 +92,6 @@ function LowRatingSuccess({ orderNumber }: { orderNumber: string }) {
         <p className="text-sm text-amber-700 leading-relaxed mb-3">
           Ons team neemt mogelijk nog contact met u op om uw ervaring verder te bespreken.
         </p>
-        <div className="bg-white/50 rounded-lg p-3">
-          <p className="text-xs font-bold text-amber-800 mb-1">🎁 Maandelijkse verloting</p>
-          <p className="text-xs text-amber-700">
-            Ondanks uw mindere ervaring, doet u alsnog automatisch mee aan onze maandelijkse verloting van €100. Wij laten het u weten als u wint!
-          </p>
-        </div>
       </div>
       <p className="mt-6 text-xs text-gray-400">Met vriendelijke groet, Van Soest Living</p>
     </div>
@@ -216,18 +210,26 @@ function ReviewForm() {
                   Wij zijn altijd op zoek naar manieren om onze producten en service te verbeteren.
                   Deel uw eerlijke ervaring – het duurt slechts 1 minuutje.
                 </p>
-                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <p className="text-xs font-bold text-amber-800 mb-1">🎁 Maandelijkse verloting</p>
-                  <p className="text-xs text-amber-700 leading-relaxed">
-                    Klanten die hun feedback achterlaten maken gratis kans op{' '}
-                    <strong>€100</strong> in onze maandelijkse verloting.
-                  </p>
-                </div>
               </div>
             </div>
 
             {/* Form card */}
             <div className="glass-card rounded-2xl p-6 shadow-2xl">
+              <a
+                href={TRUSTPILOT_URL}
+                id="trustpilot-direct"
+                className="mb-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#00b67a] px-4 py-3.5 text-center text-sm font-bold text-white shadow-lg transition-colors hover:bg-[#00a569]"
+              >
+                Review achterlaten op Trustpilot
+                <ExternalLink className="w-4 h-4" />
+              </a>
+
+              <div className="mb-5 flex items-center gap-3">
+                <div className="h-px flex-1 bg-gray-200" />
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">of</span>
+                <div className="h-px flex-1 bg-gray-200" />
+              </div>
+
               <form onSubmit={handleSubmit} className="space-y-6">
 
                 {/* Star rating */}
