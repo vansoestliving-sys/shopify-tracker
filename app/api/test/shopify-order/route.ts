@@ -4,6 +4,41 @@ import { requireAdminUser } from '@/lib/admin-auth'
 
 export const dynamic = 'force-dynamic'
 
+function normalizeStoreUrl(storeUrl: string) {
+  const clean = storeUrl.replace(/\/$/, '')
+  return clean.startsWith('http') ? clean : `https://${clean}`
+}
+
+async function fetchShopifyJson(url: string, accessToken: string) {
+  const response = await fetch(url, {
+    headers: {
+      'X-Shopify-Access-Token': accessToken,
+      'Content-Type': 'application/json',
+    },
+  })
+
+  const text = await response.text()
+  let data: any = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      data = null
+    }
+  }
+
+  return { response, text, data }
+}
+
+function buildOrdersSearchUrl(storeUrl: string, name: string) {
+  const params = new URLSearchParams({
+    status: 'any',
+    limit: '1',
+    name,
+  })
+  return `${storeUrl}/admin/api/2024-01/orders.json?${params.toString()}`
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await requireAdminUser()
@@ -21,39 +56,36 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const storeUrl = process.env.SHOPIFY_STORE_URL
+    const rawStoreUrl = process.env.SHOPIFY_STORE_URL
     const accessToken = process.env.SHOPIFY_ACCESS_TOKEN
 
-    if (!storeUrl || !accessToken) {
+    if (!rawStoreUrl || !accessToken) {
       return NextResponse.json(
         { error: 'Shopify not configured' },
         { status: 503 }
       )
     }
 
+    const storeUrl = normalizeStoreUrl(rawStoreUrl)
+
     // Try to fetch order - first by ID, then by order number
     let order: any = null
     let fetchMethod = 'id'
     let errorDetails: string[] = []
+    let triedUrls: string[] = []
     
     // Try fetching by order ID first (for large numeric IDs)
     // Fetch full order without fields parameter to get all data
     const idUrl = `${storeUrl}/admin/api/2024-01/orders/${orderId}.json`
+    triedUrls.push(idUrl)
     try {
-      const idResponse = await fetch(idUrl, {
-        headers: {
-          'X-Shopify-Access-Token': accessToken,
-          'Content-Type': 'application/json',
-        },
-      })
+      const { response: idResponse, text: idText, data } = await fetchShopifyJson(idUrl, accessToken)
 
       if (idResponse.ok) {
-        const data = await idResponse.json()
         order = data.order
         fetchMethod = 'id'
       } else {
-        const errorText = await idResponse.text()
-        errorDetails.push(`ID fetch failed (${idResponse.status}): ${errorText}`)
+        errorDetails.push(`ID fetch failed (${idResponse.status}): ${idText}`)
       }
     } catch (err: any) {
       errorDetails.push(`ID fetch error: ${err.message}`)
@@ -62,32 +94,34 @@ export async function GET(request: NextRequest) {
     // If ID fetch failed, try fetching by order number
     if (!order) {
       const orderNumber = orderId.startsWith('#') ? orderId.substring(1) : orderId
-      // Don't use fields parameter - fetch full order to get all data
-      const numberUrl = `${storeUrl}/admin/api/2024-01/orders.json?name=${orderNumber}&limit=1`
-      
-      try {
-        const numberResponse = await fetch(numberUrl, {
-          headers: {
-            'X-Shopify-Access-Token': accessToken,
-            'Content-Type': 'application/json',
-          },
-        })
+      const nameCandidates = Array.from(new Set([
+        orderId,
+        orderNumber,
+        `#${orderNumber}`,
+      ]))
 
-        if (numberResponse.ok) {
-          const data = await numberResponse.json()
+      for (const nameCandidate of nameCandidates) {
+        const numberUrl = buildOrdersSearchUrl(storeUrl, nameCandidate)
+        triedUrls.push(numberUrl)
+
+        try {
+          const { response: numberResponse, text: numberText, data } = await fetchShopifyJson(numberUrl, accessToken)
+
+          if (!numberResponse.ok) {
+            errorDetails.push(`Order name fetch "${nameCandidate}" failed (${numberResponse.status}): ${numberText}`)
+            continue
+          }
+
           if (data.orders && data.orders.length > 0) {
             order = data.orders[0]
-            fetchMethod = 'order_number'
-          } else {
-            const errorText = await numberResponse.text()
-            errorDetails.push(`Order number fetch returned no results: ${errorText}`)
+            fetchMethod = `order_name:${nameCandidate}`
+            break
           }
-        } else {
-          const errorText = await numberResponse.text()
-          errorDetails.push(`Order number fetch failed (${numberResponse.status}): ${errorText}`)
+
+          errorDetails.push(`Order name fetch "${nameCandidate}" returned no results`)
+        } catch (err: any) {
+          errorDetails.push(`Order name fetch "${nameCandidate}" error: ${err.message}`)
         }
-      } catch (err: any) {
-        errorDetails.push(`Order number fetch error: ${err.message}`)
       }
     }
 
@@ -97,10 +131,7 @@ export async function GET(request: NextRequest) {
           error: `Order not found`,
           message: `Could not find order with ID/number: ${orderId}`,
           details: errorDetails.join('; '),
-          tried: {
-            asId: `${storeUrl}/admin/api/2024-01/orders/${orderId}.json`,
-            asOrderNumber: `${storeUrl}/admin/api/2024-01/orders.json?name=${orderId.startsWith('#') ? orderId.substring(1) : orderId}`,
-          },
+          tried: triedUrls,
           hint: 'If you entered a small number like "1741", that\'s likely an order number. Try the full Shopify order ID (a large number) or ensure the order number is correct.'
         },
         { status: 404 }
