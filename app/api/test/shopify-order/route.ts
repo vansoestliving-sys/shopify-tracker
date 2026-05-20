@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchShopifyCustomerGraphQL } from '@/lib/shopify/client'
+import { requireAdminUser } from '@/lib/admin-auth'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireAdminUser()
+    if (auth.error) {
+      return NextResponse.json({ error: auth.error }, { status: 401 })
+    }
+
     const { searchParams } = new URL(request.url)
     const orderId = searchParams.get('orderId')
 
