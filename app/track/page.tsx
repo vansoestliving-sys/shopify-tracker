@@ -197,7 +197,7 @@ export default function TrackPage() {
                           Let op: dit is niet uw leverdatum
                         </p>
                         <p className="mt-1 text-sm font-semibold leading-relaxed text-red-700">
-                          De datum hierboven is alleen het verwachte moment waarop u bericht krijgt om zelf een definitieve leverdatum in te plannen.
+                          De datum hierboven is alleen een verwacht contactmoment. U krijgt later een e-mail of WhatsApp-bericht om zelf uw leverdatum in te plannen.
                         </p>
                       </div>
                     </div>
@@ -205,7 +205,7 @@ export default function TrackPage() {
                   
                   {/* Delivery Information Text */}
                   <p className="text-sm text-gray-600 mt-4 italic">
-                    Zodra uw bestelling klaar is, ontvangt u via e-mail of telefoon de mogelijkheid om een echte leverafspraak te kiezen.
+                    Wacht alstublieft op dat bericht; daarin staat hoe u de echte leverafspraak kunt kiezen.
                   </p>
                 </div>
               </div>
