@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Calendar } from 'lucide-react'
+import { AlertTriangle, Calendar } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import Logo from '@/components/Logo'
 
@@ -181,12 +181,31 @@ export default function TrackPage() {
                           return formatDate(order.delivery_eta)
                         })()}
                       </p>
+                      <span className="mt-2 inline-flex items-center justify-center rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-700 ring-1 ring-red-200">
+                        Geen leverdatum
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 rounded-xl border-2 border-red-300 bg-red-50 p-4 text-left shadow-sm">
+                    <div className="flex flex-col items-center gap-3 text-center sm:flex-row sm:items-start sm:text-left">
+                      <div className="rounded-lg bg-red-100 p-2">
+                        <AlertTriangle className="h-5 w-5 text-red-700" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-black uppercase tracking-wide text-red-800">
+                          Let op: dit is niet uw leverdatum
+                        </p>
+                        <p className="mt-1 text-sm font-semibold leading-relaxed text-red-700">
+                          De datum hierboven is alleen een verwacht contactmoment. U ontvangt later een definitieve leverdatum zodra uw bestelling klaar is.
+                        </p>
+                      </div>
                     </div>
                   </div>
                   
                   {/* Delivery Information Text */}
                   <p className="text-sm text-gray-600 mt-4 italic">
-                    De getoonde datum is een verwachting. Wanneer je bestelling klaar is, nemen wij of de vervoerder rond of kort na deze datum contact met je op via e-mail of telefoon om een definitieve leverdatum af te spreken.
+                    Wij of de vervoerder nemen rond of kort na het contactmoment contact met u op via e-mail of telefoon om de echte leverafspraak te maken.
                   </p>
                 </div>
               </div>
