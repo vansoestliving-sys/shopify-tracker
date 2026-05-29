@@ -178,7 +178,7 @@ export default function TrackPage() {
                           if (deliveryDate < today) {
                             return 'Contactmoment binnen enkele dagen'
                           }
-                          return formatDate(order.delivery_eta)
+                          return `+/- ${formatDate(order.delivery_eta)}`
                         })()}
                       </p>
                       <span className="mt-2 inline-flex items-center justify-center rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-700 ring-1 ring-red-200">
@@ -197,7 +197,7 @@ export default function TrackPage() {
                           Let op: dit is niet uw leverdatum
                         </p>
                         <p className="mt-1 text-sm font-semibold leading-relaxed text-red-700">
-                          De datum hierboven is alleen een verwacht contactmoment. U krijgt later een e-mail of WhatsApp-bericht om zelf uw leverdatum in te plannen.
+                          De datum hierboven is alleen een verwacht contactmoment en kan enkele dagen eerder of later zijn. U krijgt later een e-mail of WhatsApp-bericht om zelf uw leverdatum in te plannen.
                         </p>
                       </div>
                     </div>
