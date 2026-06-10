@@ -45,11 +45,9 @@ export async function GET(request: NextRequest) {
 
     const d7Str  = d7.toISOString().split('T')[0]
     const d10Str = d10.toISOString().split('T')[0]
-    const d17 = new Date(today); d17.setDate(d17.getDate() - 17)
-    const d17Str = d17.toISOString().split('T')[0]
     const capStr = cap.toISOString().split('T')[0]
 
-    console.log(`📧 Review email cron: today=${today.toISOString().split('T')[0]}, d7=${d7Str}, d10=${d10Str}, d17=${d17Str}`)
+    console.log(`📧 Review email cron: today=${today.toISOString().split('T')[0]}, d7=${d7Str}, d10=${d10Str}`)
 
     // ── Fetch eligible orders (has delivery_date, not cancelled) ──
     const { data: orders, error: ordersError } = await supabase
@@ -57,7 +55,6 @@ export async function GET(request: NextRequest) {
       .select(`
         id,
         shopify_order_number,
-        customer_id,
         customer_email,
         customer_first_name,
         delivery_date,
@@ -97,36 +94,8 @@ export async function GET(request: NextRequest) {
       sentMap.get(row.order_id)!.add(row.email_type)
     }
 
-    const customerIds = Array.from(new Set(orders.map((o: any) => o.customer_id).filter(Boolean)))
-    const customersById = new Map<string, any>()
-    if (customerIds.length > 0) {
-      const { data: customers, error: customersError } = await supabase
-        .from('customers')
-        .select('id, phone')
-        .in('id', customerIds)
-
-      if (customersError) throw customersError
-      ;(customers || []).forEach((customer: any) => {
-        customersById.set(customer.id, customer)
-      })
-    }
-
-    const { data: reviews, error: reviewsError } = await supabase
-      .from('customer_reviews')
-      .select('order_id')
-      .in('order_id', orderIds)
-
-    if (reviewsError) throw reviewsError
-
-    const reviewMap = new Map<string, boolean>()
-    for (const review of reviews || []) {
-      reviewMap.set(review.order_id, true)
-    }
-
     let sentCount = 0
-    let whatsappCount = 0
     let skippedDpd = 0
-    let skippedNoPhone = 0
     let skippedAlreadySent = 0
     const errors: string[] = []
 
@@ -145,8 +114,7 @@ export async function GET(request: NextRequest) {
       }
       // If no order_items found, we still send (can't be sure it's DPD-only)
 
-      const reviewUrl = buildReviewUrl(order.shopify_order_number, order.customer_email || '')
-      const customerPhone = order.customer_id ? customersById.get(order.customer_id)?.phone || null : null
+      const reviewUrl = buildReviewUrl(order.shopify_order_number, order.customer_email)
 
       // ── Initial email: delivery_date was exactly 7-9 days ago ──
       // (d10Str < deliveryDate <= d7Str means: 7..9 days old → send initial)
@@ -202,54 +170,6 @@ export async function GET(request: NextRequest) {
         } catch (err: any) {
           errors.push(`#${order.shopify_order_number}: ${err.message}`)
         }
-      } else if (
-        !sentTypes.has('whatsapp') &&
-        sentTypes.has('reminder') &&
-        !reviewMap.has(order.id) &&
-        deliveryDate <= d17Str
-      ) {
-        if (!customerPhone) {
-          skippedNoPhone++
-          errors.push(`#${order.shopify_order_number}: skipped WhatsApp because phone number is missing`)
-        } else {
-          try {
-            const whatsappWebhookUrl =
-              process.env.REVIEW_WHATSAPP_WEBHOOK_URL ||
-              'https://n8n.vansoestliving.com/webhook/5f81e362-f993-4345-b207-2d8c2324c488'
-
-            const payload = {
-              orderId: order.id,
-              orderNumber: order.shopify_order_number || order.id,
-              customerEmail: order.customer_email,
-              customerFirstName: order.customer_first_name || '',
-              customerPhone,
-              reviewUrl,
-              channel: 'review_whatsapp',
-              source: 'cron',
-            }
-
-            const webhookResponse = await fetch(whatsappWebhookUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            })
-
-            const webhookText = await webhookResponse.text()
-            if (!webhookResponse.ok) {
-              errors.push(`#${order.shopify_order_number}: WhatsApp webhook failed (${webhookResponse.status}) ${webhookText}`)
-            } else {
-              await supabase.from('review_emails').insert({
-                order_id: order.id,
-                customer_email: order.customer_email,
-                email_type: 'whatsapp',
-              })
-              whatsappCount++
-              console.log(`✅ WhatsApp review request queued → order #${order.shopify_order_number} (${customerPhone})`)
-            }
-          } catch (err: any) {
-            errors.push(`#${order.shopify_order_number}: ${err.message}`)
-          }
-        }
       } else {
         skippedAlreadySent++
       }
@@ -260,9 +180,7 @@ export async function GET(request: NextRequest) {
       timestamp: new Date().toISOString(),
       eligible: orders.length,
       sent: sentCount,
-      whatsappSent: whatsappCount,
       skippedDpd,
-      skippedNoPhone,
       skippedAlreadySent,
       errors: errors.length > 0 ? errors : undefined,
     })

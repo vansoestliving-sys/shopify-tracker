@@ -58,7 +58,12 @@ export async function GET(request: NextRequest) {
           shopify_order_number,
           customer_email,
           customer_first_name,
-        customer_id,
+          delivery_eta,
+          status,
+          container_id,
+          tracking_id,
+          created_at
+        `)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
 
@@ -75,21 +80,6 @@ export async function GET(request: NextRequest) {
 
     // Fetch allocations for all orders to check if they're split
     const orderIds = orders?.map((o: any) => o.id) || []
-    const customerIds = Array.from(new Set(orders.map((o: any) => o.customer_id).filter(Boolean)))
-    const customersById: Record<string, any> = {}
-
-    if (customerIds.length > 0) {
-      const { data: customers, error: customersError } = await supabase
-        .from('customers')
-        .select('id, phone')
-        .in('id', customerIds)
-
-      if (customersError) throw customersError
-      ;(customers || []).forEach((customer: any) => {
-        customersById[customer.id] = customer
-      })
-    }
-
     let allocationsMap: Record<string, any[]> = {}
     
     if (orderIds.length > 0) {
@@ -119,7 +109,6 @@ export async function GET(request: NextRequest) {
       const uniqueContainers = new Set(allocations.map((a: any) => a.container_id))
       return {
         ...order,
-        customer_phone: order.customer_id ? customersById[order.customer_id]?.phone || null : null,
         has_allocations: allocations.length > 0,
         allocation_count: allocations.length,
         container_count: uniqueContainers.size,
