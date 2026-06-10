@@ -58,7 +58,13 @@ export async function GET(request: NextRequest) {
           shopify_order_number,
           customer_email,
           customer_first_name,
-        customer_id,
+          customer_id,
+          delivery_eta,
+          status,
+          container_id,
+          tracking_id,
+          created_at
+        `)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
 

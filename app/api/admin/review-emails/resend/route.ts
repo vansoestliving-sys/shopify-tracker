@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
         source: 'admin_manual',
       }
 
-      const webhookResponse = await fetch(whatsappWebhookUrl, {
+      const webhookResponse = await fetch(resolvedWebhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
