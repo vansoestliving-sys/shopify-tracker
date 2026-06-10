@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2, Mail } from 'lucide-react'
+import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2, Mail, MessageSquare } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
@@ -19,6 +19,7 @@ interface Order {
   shopify_order_number: string | null
   customer_email: string
   customer_first_name: string | null
+  customer_phone?: string | null
   delivery_eta: string | null
   status: string
   container_id: string | null
@@ -63,11 +64,21 @@ export default function OrdersPage() {
   const [selectedOrders, setSelectedOrders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [resendingReviewId, setResendingReviewId] = useState<string | null>(null)
+  const [sendingWhatsAppId, setSendingWhatsAppId] = useState<string | null>(null)
+  const [webhookMode, setWebhookMode] = useState<'prod' | 'test'>('prod')
   const toast = useToast()
 
   useEffect(() => {
+    const storedMode = window.localStorage.getItem('reviewWhatsAppWebhookMode')
+    if (storedMode === 'test' || storedMode === 'prod') {
+      setWebhookMode(storedMode)
+    }
     checkUser()
   }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem('reviewWhatsAppWebhookMode', webhookMode)
+  }, [webhookMode])
 
   const checkUser = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -269,6 +280,41 @@ export default function OrdersPage() {
     }
   }
 
+  const handleSendReviewWhatsApp = async (order: Order) => {
+    if (!order.customer_phone) {
+      alert('Deze bestelling heeft geen telefoonnummer voor WhatsApp.')
+      return
+    }
+
+    if (!confirm(`WhatsApp reviewverzoek verzenden naar ${order.customer_phone}?`)) {
+      return
+    }
+
+    setSendingWhatsAppId(order.id)
+    try {
+      const response = await fetch('/api/admin/review-emails/resend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+          emailType: 'whatsapp',
+          webhookMode,
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'WhatsApp review kon niet worden verzonden')
+      }
+
+      alert(`WhatsApp review verzoek verzonden naar ${data.customerPhone}.`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'WhatsApp review kon niet worden verzonden')
+    } finally {
+      setSendingWhatsAppId(null)
+    }
+  }
+
   const filteredOrders = orders.filter(order => {
     const matchesSearch = !searchQuery || 
       order.shopify_order_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -354,6 +400,22 @@ export default function OrdersPage() {
               </button>
             )}
           </div>
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-sm text-gray-700">
+            <span className="font-semibold">WhatsApp webhook</span>
+            <select
+              value={webhookMode}
+              onChange={(e) => setWebhookMode(e.target.value as 'prod' | 'test')}
+              className="border border-gray-300 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-primary-400"
+            >
+              <option value="prod">Production</option>
+              <option value="test">Test</option>
+            </select>
+          </label>
+          <p className="text-xs text-gray-500">
+            Keuze voor admin WhatsApp-verzoeken. Prod gebruikt `REVIEW_WHATSAPP_WEBHOOK_URL`, test gebruikt `REVIEW_WHATSAPP_TEST_WEBHOOK_URL`.
+          </p>
         </div>
 
         {error && (
@@ -556,6 +618,18 @@ export default function OrdersPage() {
                               <RefreshCw className="w-4 h-4 animate-spin" />
                             ) : (
                               <Mail className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleSendReviewWhatsApp(order)}
+                            disabled={sendingWhatsAppId === order.id || !order.customer_phone}
+                            className="text-primary-400 hover:text-primary-600 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed"
+                            title={order.customer_phone ? 'Review-WhatsApp verzenden' : 'Geen telefoonnummer beschikbaar'}
+                          >
+                            {sendingWhatsAppId === order.id ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <MessageSquare className="w-4 h-4" />
                             )}
                           </button>
                           <button
