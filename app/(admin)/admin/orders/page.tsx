@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2, Mail } from 'lucide-react'
+import { Search, Edit, Filter, Download, RefreshCw, Eye, Plus, Upload, Trash2, Mail, MessageCircle } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { supabase } from '@/lib/supabase/client'
 import Navigation from '@/components/Navigation'
@@ -18,6 +18,7 @@ interface Order {
   id: string
   shopify_order_number: string | null
   customer_email: string
+  customer_phone?: string | null
   customer_first_name: string | null
   delivery_eta: string | null
   status: string
@@ -63,6 +64,7 @@ export default function OrdersPage() {
   const [selectedOrders, setSelectedOrders] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [resendingReviewId, setResendingReviewId] = useState<string | null>(null)
+  const [triggeringWhatsAppTestId, setTriggeringWhatsAppTestId] = useState<string | null>(null)
   const toast = useToast()
 
   useEffect(() => {
@@ -266,6 +268,39 @@ export default function OrdersPage() {
       alert(error instanceof Error ? error.message : 'Review e-mail kon niet opnieuw worden verstuurd')
     } finally {
       setResendingReviewId(null)
+    }
+  }
+
+  const handleTriggerReviewWhatsAppTest = async (order: Order) => {
+    if (!order.customer_phone) {
+      alert('Deze bestelling heeft geen telefoonnummer voor WhatsApp.')
+      return
+    }
+
+    if (!confirm(`Review WhatsApp-test via n8n triggeren voor bestelling #${order.shopify_order_number || 'N/A'}?\n\nTelefoon: ${order.customer_phone}\n\nGebruik dit alleen voor een test of handmatige controle.`)) {
+      return
+    }
+
+    setTriggeringWhatsAppTestId(order.id)
+    try {
+      const response = await fetch('/api/admin/review-whatsapp-followups/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderId: order.id,
+        }),
+      })
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'WhatsApp-test kon niet worden getriggerd')
+      }
+
+      alert(`WhatsApp-test naar n8n gestuurd voor bestelling #${data.orderNumber || order.shopify_order_number || 'N/A'}.\n\nTelefoon: ${data.phone}\nGepland: ${data.scheduledFor}`)
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'WhatsApp-test kon niet worden getriggerd')
+    } finally {
+      setTriggeringWhatsAppTestId(null)
     }
   }
 
@@ -556,6 +591,18 @@ export default function OrdersPage() {
                               <RefreshCw className="w-4 h-4 animate-spin" />
                             ) : (
                               <Mail className="w-4 h-4" />
+                            )}
+                          </button>
+                          <button
+                            onClick={() => handleTriggerReviewWhatsAppTest(order)}
+                            disabled={triggeringWhatsAppTestId === order.id || !order.customer_phone}
+                            className="text-green-600 hover:text-green-800 transition-colors disabled:text-gray-300 disabled:cursor-not-allowed"
+                            title={order.customer_phone ? 'Review WhatsApp-test via n8n triggeren' : 'Geen telefoonnummer beschikbaar voor WhatsApp-test'}
+                          >
+                            {triggeringWhatsAppTestId === order.id ? (
+                              <RefreshCw className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <MessageCircle className="w-4 h-4" />
                             )}
                           </button>
                           <button

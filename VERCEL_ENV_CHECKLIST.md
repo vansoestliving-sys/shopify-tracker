@@ -18,8 +18,18 @@ These are **recommended** for full functionality:
 
 ```
 SHOPIFY_WEBHOOK_SECRET=your_webhook_secret
+REVIEW_WHATSAPP_WEBHOOK_URL=your_n8n_review_whatsapp_webhook_url
 ```
 **Why:** Needed to verify webhook signatures from Shopify. Without this, webhooks will fail with "Invalid webhook signature" error.
+
+`REVIEW_WHATSAPP_WEBHOOK_URL` is needed for the automated WhatsApp review follow-up after email reminders. Optional throttling controls:
+
+```
+REVIEW_WHATSAPP_DAILY_LIMIT=25
+REVIEW_WHATSAPP_STAGGER_MINUTES=10
+REVIEW_WHATSAPP_TEMPLATE_NAME=review_followup
+REVIEW_WHATSAPP_TEMPLATE_LANGUAGE=nl
+```
 
 ## 🔒 Optional Variables (Not Critical)
 

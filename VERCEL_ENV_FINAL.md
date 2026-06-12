@@ -15,6 +15,11 @@ SHOPIFY_ACCESS_TOKEN=your_shopify_access_token
 ```
 SHOPIFY_WEBHOOK_SECRET=your_webhook_secret (only if using webhooks)
 ADMIN_SECRET_KEY=your_admin_secret (optional, for extra API protection)
+REVIEW_WHATSAPP_WEBHOOK_URL=your_n8n_review_whatsapp_webhook_url
+REVIEW_WHATSAPP_DAILY_LIMIT=25
+REVIEW_WHATSAPP_STAGGER_MINUTES=10
+REVIEW_WHATSAPP_TEMPLATE_NAME=review_followup
+REVIEW_WHATSAPP_TEMPLATE_LANGUAGE=nl
 ```
 
 ## ❌ DO NOT Add:

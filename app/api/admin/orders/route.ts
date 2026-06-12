@@ -58,6 +58,9 @@ export async function GET(request: NextRequest) {
           shopify_order_number,
           customer_email,
           customer_first_name,
+          customer:customers (
+            phone
+          ),
           delivery_eta,
           status,
           container_id,
@@ -107,8 +110,11 @@ export async function GET(request: NextRequest) {
     const ordersWithAllocations = orders?.map((order: any) => {
       const allocations = allocationsMap[order.id] || []
       const uniqueContainers = new Set(allocations.map((a: any) => a.container_id))
+      const customer = Array.isArray(order.customer) ? order.customer[0] : order.customer
       return {
         ...order,
+        customer_phone: customer?.phone || null,
+        customer: undefined,
         has_allocations: allocations.length > 0,
         allocation_count: allocations.length,
         container_count: uniqueContainers.size,

@@ -66,10 +66,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: result.error || 'Failed to resend review email' }, { status: 502 })
     }
 
-    const { error: logError } = await supabase.from('review_emails').insert({
+    const { error: logError } = await supabase.from('review_emails').upsert({
       order_id: order.id,
       customer_email: order.customer_email,
       email_type: emailType,
+      sent_at: new Date().toISOString(),
+    }, {
+      onConflict: 'order_id,email_type',
     })
 
     if (logError) {

@@ -9,6 +9,10 @@
       "schedule": "0 7 * * *"
     },
     {
+      "path": "/api/cron/review-whatsapp-followups",
+      "schedule": "30 8 * * *"
+    },
+    {
       "path": "/api/cron/notification-emails",
       "schedule": "15 7 * * *"
     }

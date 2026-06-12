@@ -94,14 +94,63 @@ export async function GET(request: NextRequest) {
       sentMap.get(row.order_id)!.add(row.email_type)
     }
 
+    // ── Fetch submitted reviews so customers are not reminded after responding ──
+    const orderNumbers = orders
+      .map((order: any) => order.shopify_order_number)
+      .filter(Boolean)
+
+    const reviewedOrderIds = new Set<string>()
+    const reviewedOrderNumbers = new Set<string>()
+
+    const { data: reviewsByOrderId, error: reviewsByOrderIdError } = await supabase
+      .from('customer_reviews')
+      .select('order_id, shopify_order_number')
+      .in('order_id', orderIds)
+
+    if (reviewsByOrderIdError) {
+      console.error('Error fetching reviews by order id:', reviewsByOrderIdError)
+      return NextResponse.json({ error: reviewsByOrderIdError.message }, { status: 500 })
+    }
+
+    for (const review of reviewsByOrderId || []) {
+      if (review.order_id) reviewedOrderIds.add(review.order_id)
+      if (review.shopify_order_number) reviewedOrderNumbers.add(review.shopify_order_number)
+    }
+
+    if (orderNumbers.length > 0) {
+      const { data: reviewsByOrderNumber, error: reviewsByOrderNumberError } = await supabase
+        .from('customer_reviews')
+        .select('order_id, shopify_order_number')
+        .in('shopify_order_number', orderNumbers)
+
+      if (reviewsByOrderNumberError) {
+        console.error('Error fetching reviews by order number:', reviewsByOrderNumberError)
+        return NextResponse.json({ error: reviewsByOrderNumberError.message }, { status: 500 })
+      }
+
+      for (const review of reviewsByOrderNumber || []) {
+        if (review.order_id) reviewedOrderIds.add(review.order_id)
+        if (review.shopify_order_number) reviewedOrderNumbers.add(review.shopify_order_number)
+      }
+    }
+
     let sentCount = 0
     let skippedDpd = 0
     let skippedAlreadySent = 0
+    let skippedReviewed = 0
     const errors: string[] = []
 
     for (const order of orders) {
       const deliveryDate = order.delivery_date as string
       const sentTypes = sentMap.get(order.id) || new Set()
+
+      if (
+        reviewedOrderIds.has(order.id) ||
+        (order.shopify_order_number && reviewedOrderNumbers.has(order.shopify_order_number))
+      ) {
+        skippedReviewed++
+        continue
+      }
 
       // ── DPD check: skip if ALL items are DPD ──
       const items = (order.order_items as any[]) || []
@@ -182,6 +231,7 @@ export async function GET(request: NextRequest) {
       sent: sentCount,
       skippedDpd,
       skippedAlreadySent,
+      skippedReviewed,
       errors: errors.length > 0 ? errors : undefined,
     })
   } catch (error: any) {
