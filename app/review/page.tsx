@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { CheckCircle, AlertCircle, Loader2, Star, ExternalLink } from 'lucide-react'
+import { CheckCircle, AlertCircle, Loader2, Star } from 'lucide-react'
 import Logo from '@/components/Logo'
 
 const TRUSTPILOT_URL = 'https://nl.trustpilot.com/review/www.vansoestliving.nl'
@@ -229,21 +229,6 @@ function ReviewForm() {
 
             {/* Form card */}
             <div className="glass-card rounded-2xl p-6 shadow-2xl">
-              <a
-                href={TRUSTPILOT_URL}
-                id="trustpilot-direct"
-                className="mb-5 flex w-full items-center justify-center gap-2 rounded-xl bg-[#00b67a] px-4 py-3.5 text-center text-sm font-bold text-white shadow-lg transition-colors hover:bg-[#00a569]"
-              >
-                Review achterlaten op Trustpilot
-                <ExternalLink className="w-4 h-4" />
-              </a>
-
-              <div className="mb-5 flex items-center gap-3">
-                <div className="h-px flex-1 bg-gray-200" />
-                <span className="text-xs font-semibold uppercase tracking-wide text-gray-400">of</span>
-                <div className="h-px flex-1 bg-gray-200" />
-              </div>
-
               <form onSubmit={handleSubmit} className="space-y-6">
 
                 {/* Star rating */}
