@@ -10,6 +10,10 @@
 //      hard limit and resume on the next scheduled pass.
 //    • Stale runDailyJobs lock flags are auto-cleared so follow-ups do not stop
 //      forever after a timeout.
+//    • v2.4.1: Hourly allocation now uses a shared scan time budget so one run
+//      cannot start too many heavy products and hit the 360s Apps Script limit.
+//      checkFollowUps also shares one trigger budget across allocation, catch-up
+//      emails, and reminders so it pauses cleanly and resumes next hour.
 //
 //  NEW IN v2.3  (fixes three bugs from v2.2):
 //    • FIXED: ScriptApp.getProjectTriggers permission error in doPost.
@@ -114,9 +118,13 @@ var CFG = {
    *  Hourly scan + allocate picks up remaining work using sheet state. */
   MAX_STOCK_ITEMS_SYNC_ALLOC : 20,
   // Apps Script trigger safety. Remaining work is picked up on the next hourly pass.
-  MAX_ALLOC_ORDERS_PER_PRODUCT_RUN : 80,
-  MAX_ALLOCATION_MS_PER_PRODUCT    : 180000,
-  MAX_SCAN_RUNTIME_MS              : 270000,
+  MAX_ALLOC_ORDERS_PER_PRODUCT_RUN : 60,
+  MAX_ALLOCATION_MS_PER_PRODUCT    : 60000,
+  MAX_PRODUCTS_PER_SCAN_RUN        : 3,
+  MAX_SCAN_RUNTIME_MS              : 240000,
+  SCAN_RUNTIME_RESERVE_MS          : 45000,
+  MAX_FOLLOWUP_RUNTIME_MS          : 300000,
+  FOLLOWUP_RUNTIME_RESERVE_MS      : 30000,
   MAX_CATCHUP_RUNTIME_MS           : 240000,
 };
 
@@ -664,9 +672,16 @@ var MAX_EMAILS_PER_CATCHUP = 40;
  * Columns are batch-read once to avoid 5 individual sheet reads per row.
  * Capped at MAX_EMAILS_PER_CATCHUP to prevent 6-minute trigger timeouts when
  * a large allocation completes many orders at once.
+ *
+ * @param {number} maxRuntimeMsOverride Optional runtime budget when called as
+ *                                      part of a larger trigger.
  */
-function catchUpDeliveryRequests() {
+function catchUpDeliveryRequests(maxRuntimeMsOverride) {
   var catchupStartMs = new Date().getTime();
+  var catchupBudgetMs = (typeof maxRuntimeMsOverride === 'number' && maxRuntimeMsOverride > 0)
+    ? maxRuntimeMsOverride
+    : CFG.MAX_CATCHUP_RUNTIME_MS;
+
   var sheet = getOrdersSheet();
   if (!sheet) return;
   var lastRow  = sheet.getLastRow();
@@ -709,7 +724,7 @@ function catchUpDeliveryRequests() {
       Logger.log('catchUpDeliveryRequests: per-run cap (' + MAX_EMAILS_PER_CATCHUP + ') reached — remaining rows picked up on next hourly pass.');
       break;
     }
-    if (!stillHasBudget(catchupStartMs, CFG.MAX_CATCHUP_RUNTIME_MS)) {
+    if (!stillHasBudget(catchupStartMs, catchupBudgetMs)) {
       Logger.log('catchUpDeliveryRequests: time budget reached after ' + emailsSentThisRun + ' email(s). Remaining rows picked up on next hourly pass.');
       break;
     }
@@ -754,10 +769,14 @@ function catchUpDeliveryRequests() {
  * @param {number}  balanceOverride If > 0, use this as the allocation budget instead of
  *                                  computing (STOCK − prevAllocated). Pass the incoming
  *                                  qty from n8n so only truly new units are distributed.
+ * @param {number}  maxRuntimeMsOverride Optional per-product runtime budget for scan runs.
  * @returns {number}               Count of orders that became fully allocated (YES) this run
  */
-function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
+function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride, maxRuntimeMsOverride) {
   var allocationStartMs = new Date().getTime();
+  var allocationBudgetMs = (typeof maxRuntimeMsOverride === 'number' && maxRuntimeMsOverride > 0)
+    ? maxRuntimeMsOverride
+    : CFG.MAX_ALLOCATION_MS_PER_PRODUCT;
   var triggerCell   = actionSheet.getRange(actionRow, AC.TRIGGER);
   var resultCell    = actionSheet.getRange(actionRow, AC.RESULT);
   var timestampCell = actionSheet.getRange(actionRow, AC.TIMESTAMP);
@@ -870,7 +889,7 @@ function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
 
   for (var i = 0; i < nRows; i++) {
     if (balance <= 0) break;
-    if (!stillHasBudget(allocationStartMs, CFG.MAX_ALLOCATION_MS_PER_PRODUCT)) {
+    if (!stillHasBudget(allocationStartMs, allocationBudgetMs)) {
       stoppedEarly = true;
       break;
     }
@@ -1050,9 +1069,16 @@ function handleAllocationTrigger(actionSheet, actionRow, ss) {
  *
  * Called automatically by checkFollowUps (hourly) and runDailyJobs (08:00).
  * Also safe to run manually from the custom menu.
+ *
+ * @param {number}  maxRuntimeMsOverride Optional shared runtime budget.
+ * @param {boolean} skipCatchUp          If true, caller will run Email 1 catch-up.
  */
-function scanAndAllocatePending() {
+function scanAndAllocatePending(maxRuntimeMsOverride, skipCatchUp) {
   var scanStartMs = new Date().getTime();
+  var scanBudgetMs = (typeof maxRuntimeMsOverride === 'number' && maxRuntimeMsOverride > 0)
+    ? maxRuntimeMsOverride
+    : CFG.MAX_SCAN_RUNTIME_MS;
+
   var ss          = SpreadsheetApp.getActiveSpreadsheet();
   var actionSheet = getActionSheet(ss);
   if (!actionSheet) return;
@@ -1078,6 +1104,16 @@ function scanAndAllocatePending() {
     return;
   }
 
+  // Heavy "draaifunctie" allocation scans many rows but often skips until a chair
+  // exists in ALLOC_DATA. Process normal products first so the hourly pass makes
+  // useful progress before spending time on accessory-link checks.
+  pending.sort(function(a, b) {
+    var aAccessory = /draaifunctie/i.test(a.name);
+    var bAccessory = /draaifunctie/i.test(b.name);
+    if (aAccessory !== bAccessory) return aAccessory ? 1 : -1;
+    return b.available - a.available;
+  });
+
   Logger.log('scanAndAllocatePending: ' + pending.length + ' product(s) with available stock: '
     + pending.map(function(p) { return p.name + '(' + p.available + ')'; }).join(', '));
 
@@ -1087,16 +1123,32 @@ function scanAndAllocatePending() {
     return;
   }
   var totalNewlyFull = 0;
+  var processedProducts = 0;
   try {
     for (var i = 0; i < pending.length; i++) {
-      if (!stillHasBudget(scanStartMs, CFG.MAX_SCAN_RUNTIME_MS)) {
-        Logger.log('scanAndAllocatePending: time budget reached after ' + i + ' product(s); remaining products resume next scheduled pass.');
+      if (processedProducts >= CFG.MAX_PRODUCTS_PER_SCAN_RUN) {
+        Logger.log('scanAndAllocatePending: product cap reached after ' + processedProducts + ' product(s); remaining products resume next scheduled pass.');
         break;
       }
+
+      var remainingScanMs = scanBudgetMs - elapsedMs(scanStartMs);
+      if (remainingScanMs <= CFG.SCAN_RUNTIME_RESERVE_MS) {
+        Logger.log('scanAndAllocatePending: shared time budget reached after ' + processedProducts + ' product(s); remaining products resume next scheduled pass.');
+        break;
+      }
+
+      var productBudgetMs = Math.min(
+        CFG.MAX_ALLOCATION_MS_PER_PRODUCT,
+        Math.max(15000, remainingScanMs - CFG.SCAN_RUNTIME_RESERVE_MS)
+      );
+
       try {
         // Pass available as the balance override so runAllocation uses the exact
         // B − C value computed above — avoids a redundant re-read inside the function.
-        totalNewlyFull += runAllocation(actionSheet, pending[i].row, ss, true, pending[i].available);
+        Logger.log('scanAndAllocatePending: allocating ' + pending[i].name + ' with '
+          + Math.round(productBudgetMs / 1000) + 's budget.');
+        totalNewlyFull += runAllocation(actionSheet, pending[i].row, ss, true, pending[i].available, productBudgetMs);
+        processedProducts++;
       } catch(err) {
         Logger.log('scanAndAllocatePending error for ' + pending[i].name + ': ' + err.message);
       }
@@ -1105,8 +1157,16 @@ function scanAndAllocatePending() {
     lock.releaseLock();
   }
 
-  if (totalNewlyFull > 0) {
-    try { catchUpDeliveryRequests(); } catch(e3) { Logger.log('catchUp after scan: ' + e3.message); }
+  if (totalNewlyFull > 0 && !skipCatchUp) {
+    var catchupBudgetMs = Math.min(
+      CFG.MAX_CATCHUP_RUNTIME_MS,
+      Math.max(0, scanBudgetMs - elapsedMs(scanStartMs) - CFG.SCAN_RUNTIME_RESERVE_MS)
+    );
+    if (catchupBudgetMs >= 15000) {
+      try { catchUpDeliveryRequests(catchupBudgetMs); } catch(e3) { Logger.log('catchUp after scan: ' + e3.message); }
+    } else {
+      Logger.log('scanAndAllocatePending: catch-up skipped this run because allocation used the shared time budget.');
+    }
   }
 
   Logger.log('scanAndAllocatePending: done.');
@@ -1216,6 +1276,7 @@ function postToWaWebhook(phone, orderId, messageType, email) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 function checkFollowUps() {
+  var followStartMs = new Date().getTime();
   // Runs every day (including weekends): allocation sweep, Email 1 catch-up, follow-ups.
   // Weekend guard removed — customer emails/WhatsApp should run Sat/Sun too.
   // Only the daily fulfillment Excel export stays off on weekends (see runDailyJobs).
@@ -1229,9 +1290,27 @@ function checkFollowUps() {
     return;
   }
 
-  // First sweep for any idle stock and allocate + send Email 1 where applicable
-  try { scanAndAllocatePending(); } catch(e) { Logger.log('scanAndAllocatePending error: ' + e.message); }
-  catchUpDeliveryRequests();
+  // First sweep for any idle stock, then catch up Email 1. Both share the same
+  // checkFollowUps trigger budget so the hourly job can pause cleanly before 6 min.
+  var scanBudgetMs = Math.min(
+    CFG.MAX_SCAN_RUNTIME_MS,
+    Math.max(0, CFG.MAX_FOLLOWUP_RUNTIME_MS - elapsedMs(followStartMs) - CFG.FOLLOWUP_RUNTIME_RESERVE_MS)
+  );
+  if (scanBudgetMs >= 15000) {
+    try { scanAndAllocatePending(scanBudgetMs, true); } catch(e) { Logger.log('scanAndAllocatePending error: ' + e.message); }
+  } else {
+    Logger.log('checkFollowUps: skipped allocation scan because trigger time budget is already low.');
+  }
+
+  var catchupBudgetMs = Math.min(
+    CFG.MAX_CATCHUP_RUNTIME_MS,
+    Math.max(0, CFG.MAX_FOLLOWUP_RUNTIME_MS - elapsedMs(followStartMs) - CFG.FOLLOWUP_RUNTIME_RESERVE_MS)
+  );
+  if (catchupBudgetMs >= 15000) {
+    try { catchUpDeliveryRequests(catchupBudgetMs); } catch(e2) { Logger.log('catchUpDeliveryRequests error: ' + e2.message); }
+  } else {
+    Logger.log('checkFollowUps: skipped delivery email catch-up because trigger time budget is already low.');
+  }
 
   var sheet = getOrdersSheet();
   if (!sheet) return;
@@ -1250,6 +1329,11 @@ function checkFollowUps() {
   var prefDates = sheet.getRange(fStartRow, OC.PREF_DATE,  nRows, 1).getValues();
 
   for (var i = 0; i < nRows; i++) {
+    if (!stillHasBudget(followStartMs, CFG.MAX_FOLLOWUP_RUNTIME_MS - CFG.FOLLOWUP_RUNTIME_RESERVE_MS)) {
+      Logger.log('checkFollowUps: reminder loop paused for trigger time safety; remaining rows resume next hourly pass.');
+      break;
+    }
+
     var sentVal = String(sentLogs[i][0]  || '').trim();
     var dateVal = String(prefDates[i][0] || '').trim();
 
