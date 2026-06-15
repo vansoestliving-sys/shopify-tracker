@@ -13,24 +13,9 @@ import {
 
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_DAILY_DELIVERY_NOTIFICATION_LIMIT = 90
-
-function getDailyDeliveryNotificationLimit() {
-  const rawLimit = process.env.DELIVERY_NOTIFICATION_DAILY_LIMIT || process.env.RESEND_DAILY_LIMIT
-  const parsed = Number(rawLimit)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_DAILY_DELIVERY_NOTIFICATION_LIMIT
-}
-
-function startOfTodayIso() {
-  const today = new Date()
-  today.setUTCHours(0, 0, 0, 0)
-  return today.toISOString()
-}
-
-function scheduledForOverflow(index: number, dailyLimit: number) {
-  const daysToAdd = Math.floor(index / Math.max(dailyLimit, 1)) + 1
+function tomorrowMorningIso() {
   const date = new Date()
-  date.setUTCDate(date.getUTCDate() + daysToAdd)
+  date.setUTCDate(date.getUTCDate() + 1)
   date.setUTCHours(7, 15, 0, 0)
   return date.toISOString()
 }
@@ -38,23 +23,6 @@ function scheduledForOverflow(index: number, dailyLimit: number) {
 function isQuotaLikeError(error?: string) {
   if (!error) return false
   return /429|quota|rate|limit|too many/i.test(error)
-}
-
-async function getRemainingDeliveryNotificationQuota(supabase: any) {
-  const dailyLimit = getDailyDeliveryNotificationLimit()
-  const { count, error } = await supabase
-    .from('notification_logs')
-    .select('id', { count: 'exact', head: true })
-    .eq('status', 'sent')
-    .gte('sent_at', startOfTodayIso())
-
-  if (error) throw error
-
-  return {
-    dailyLimit,
-    sentToday: count || 0,
-    remainingToday: Math.max(dailyLimit - (count || 0), 0),
-  }
 }
 
 async function getRecipients(supabase: any, containerId: string) {
@@ -197,13 +165,12 @@ export async function POST(
 
     const oldDate = formatDeliveryDateForEmail(oldEta)
     const newDate = formatDeliveryDateForEmail(newEta || container.eta)
-    const quota = await getRemainingDeliveryNotificationQuota(supabase)
     const sent: any[] = []
     const failed: any[] = []
     const queued: any[] = []
     let providerQuotaReached = false
 
-    for (const [index, recipient] of preview.recipients.entries()) {
+    for (const recipient of preview.recipients) {
       const values = {
         first_name: recipient.firstName || 'klant',
         order_numbers: recipient.orderNumbers.map((n: string) => `#${n}`).join(', '),
@@ -242,8 +209,8 @@ export async function POST(
         },
       }
 
-      if (providerQuotaReached || index >= quota.remainingToday) {
-        const scheduledFor = scheduledForOverflow(queued.length, quota.dailyLimit)
+      if (providerQuotaReached) {
+        const scheduledFor = tomorrowMorningIso()
         const { error: queueError } = await supabase.from('notification_logs').insert({
           ...logBasePayload,
           status: 'queued',
@@ -268,7 +235,7 @@ export async function POST(
 
       if (!result.success && isQuotaLikeError(result.error)) {
         providerQuotaReached = true
-        const scheduledFor = scheduledForOverflow(queued.length, quota.dailyLimit)
+        const scheduledFor = tomorrowMorningIso()
         const { error: queueError } = await supabase.from('notification_logs').insert({
           ...logBasePayload,
           status: 'queued',
@@ -315,8 +282,8 @@ export async function POST(
       sentCount: sent.length,
       failedCount: failed.length,
       queuedCount: queued.length,
-      dailyLimit: quota.dailyLimit,
-      remainingBeforeSend: quota.remainingToday,
+      dailyLimit: null,
+      remainingBeforeSend: null,
       skipped: preview.skipped,
       sent,
       failed,

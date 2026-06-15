@@ -4,20 +4,6 @@ import { sendEmail } from '@/lib/email'
 
 export const dynamic = 'force-dynamic'
 
-const DEFAULT_DAILY_DELIVERY_NOTIFICATION_LIMIT = 90
-
-function getDailyDeliveryNotificationLimit() {
-  const rawLimit = process.env.DELIVERY_NOTIFICATION_DAILY_LIMIT || process.env.RESEND_DAILY_LIMIT
-  const parsed = Number(rawLimit)
-  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : DEFAULT_DAILY_DELIVERY_NOTIFICATION_LIMIT
-}
-
-function startOfTodayIso() {
-  const today = new Date()
-  today.setUTCHours(0, 0, 0, 0)
-  return today.toISOString()
-}
-
 function isQuotaLikeError(error?: string) {
   if (!error) return false
   return /429|quota|rate|limit|too many/i.test(error)
@@ -41,34 +27,12 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = createSupabaseAdminClient()
-    const dailyLimit = getDailyDeliveryNotificationLimit()
-    const { count, error: countError } = await supabase
-      .from('notification_logs')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'sent')
-      .gte('sent_at', startOfTodayIso())
-
-    if (countError) throw countError
-
-    const remainingToday = Math.max(dailyLimit - (count || 0), 0)
-    if (remainingToday <= 0) {
-      return NextResponse.json({
-        success: true,
-        sent: 0,
-        failed: 0,
-        deferred: 0,
-        dailyLimit,
-        message: 'Daily delivery notification limit reached',
-      })
-    }
-
     const { data: queuedLogs, error: queueError } = await supabase
       .from('notification_logs')
       .select('id, recipient_email, order_numbers, resend_payload, attempts')
       .eq('status', 'queued')
       .or(`scheduled_for.is.null,scheduled_for.lte.${new Date().toISOString()}`)
       .order('created_at', { ascending: true })
-      .limit(remainingToday)
 
     if (queueError) throw queueError
 
@@ -146,9 +110,9 @@ export async function GET(request: NextRequest) {
       sent,
       failed,
       deferred,
-      dailyLimit,
+      dailyLimit: null,
       processed: sent + failed + deferred,
-      remainingBeforeRun: remainingToday,
+      remainingBeforeRun: null,
     })
   } catch (error: any) {
     console.error('Notification email cron error:', error)
