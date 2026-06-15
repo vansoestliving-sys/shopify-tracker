@@ -1,7 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-//  VAN SOEST LIVING — UNIFIED APPS SCRIPT  v2.3
+//  VAN SOEST LIVING — UNIFIED APPS SCRIPT  v2.4
 //  Dynamic product allocation · Delivery-date emails/WhatsApp · n8n webhooks
 //  DPD small products · Stofstaal export · Clear allocation status display
+//
+//  NEW IN v2.4:
+//    • Delivery-date request emails (Email 1 + Email 2) now send via Resend
+//      REST API instead of GmailApp to avoid Google daily email quota failures.
+//    • Long-running allocation/email runs now stop before Apps Script's 6-minute
+//      hard limit and resume on the next scheduled pass.
+//    • Stale runDailyJobs lock flags are auto-cleared so follow-ups do not stop
+//      forever after a timeout.
 //
 //  NEW IN v2.3  (fixes three bugs from v2.2):
 //    • FIXED: ScriptApp.getProjectTriggers permission error in doPost.
@@ -90,6 +98,10 @@ var CFG = {
   SENDER_NAME           : 'Van Soest Living',
   SUBJECT_EMAIL1        : 'Kies uw bezorgdatum \u2013 Bestelling #{{ORDER}}',
   SUBJECT_EMAIL2        : 'Herinnering: Kies uw bezorgdatum \u2013 Bestelling #{{ORDER}}',
+  RESEND_API_URL        : 'https://api.resend.com/emails',
+  RESEND_API_KEY_PROP   : 'RESEND_API_KEY',
+  RESEND_FROM_EMAIL     : 'Van Soest Living <noreply@vansoestliving.nl>',
+  RESEND_REPLY_TO_EMAIL : 'info@vansoestliving.nl',
   WA_WEBHOOK_URL        : 'https://n8n.vansoestliving.com/webhook/5724d4cb-4833-4799-b47a-15c90c28ca42',
   N8N_STOCK_SECRET      : 'vsl-stock-2025',
   FULFILLMENT_EMAIL     : 'logistics@micodo.nl',
@@ -101,6 +113,11 @@ var CFG = {
    *  written but per-item auto-allocate is skipped (avoids 5–6 min HTTP timeout).
    *  Hourly scan + allocate picks up remaining work using sheet state. */
   MAX_STOCK_ITEMS_SYNC_ALLOC : 20,
+  // Apps Script trigger safety. Remaining work is picked up on the next hourly pass.
+  MAX_ALLOC_ORDERS_PER_PRODUCT_RUN : 80,
+  MAX_ALLOCATION_MS_PER_PRODUCT    : 180000,
+  MAX_SCAN_RUNTIME_MS              : 270000,
+  MAX_CATCHUP_RUNTIME_MS           : 240000,
 };
 
 
@@ -150,6 +167,83 @@ function normalizeEmailForMatch(raw) {
 
 function nowStamp() {
   return Utilities.formatDate(new Date(), 'Europe/Amsterdam', 'dd-MM-yyyy HH:mm');
+}
+
+function elapsedMs(startMs) {
+  return new Date().getTime() - startMs;
+}
+
+function stillHasBudget(startMs, maxMs) {
+  return elapsedMs(startMs) < maxMs;
+}
+
+function shortLog(value, maxLen) {
+  var s = String(value || '');
+  maxLen = maxLen || 300;
+  return s.length > maxLen ? s.substring(0, maxLen) + '...' : s;
+}
+
+function buildDeliveryDateLink(orderId, email) {
+  return CFG.BASE_URL + '/bezorgdatum?order=' + orderId + '&email=' + encodeURIComponent(email);
+}
+
+/**
+ * Sends customer-facing delivery-date emails via Resend REST API.
+ * Set Apps Script Project Settings → Script properties:
+ *   RESEND_API_KEY = re_...
+ */
+function sendResendEmail(to, subject, html) {
+  var apiKey = PropertiesService.getScriptProperties().getProperty(CFG.RESEND_API_KEY_PROP);
+  if (!apiKey) {
+    throw new Error('Missing Apps Script property ' + CFG.RESEND_API_KEY_PROP);
+  }
+
+  var payload = {
+    from     : CFG.RESEND_FROM_EMAIL,
+    to       : [to],
+    subject  : subject,
+    html     : html,
+    reply_to : CFG.RESEND_REPLY_TO_EMAIL,
+  };
+
+  var lastError = '';
+  for (var attempt = 1; attempt <= 2; attempt++) {
+    var resp = UrlFetchApp.fetch(CFG.RESEND_API_URL, {
+      method            : 'post',
+      contentType       : 'application/json',
+      headers           : { Authorization: 'Bearer ' + apiKey },
+      payload           : JSON.stringify(payload),
+      muteHttpExceptions: true,
+    });
+
+    var code = resp.getResponseCode();
+    var body = resp.getContentText() || '';
+    if (code >= 200 && code < 300) {
+      var id = '';
+      try {
+        var parsed = JSON.parse(body);
+        id = parsed.id || (parsed.data && parsed.data.id) || '';
+      } catch (parseErr) {}
+      Logger.log('Resend email sent to ' + to + (id ? ' id=' + id : ''));
+      return id;
+    }
+
+    lastError = 'Resend HTTP ' + code + ': ' + shortLog(body, 500);
+    if ((code === 429 || code >= 500) && attempt < 2) {
+      Utilities.sleep(1500 * attempt);
+      continue;
+    }
+    break;
+  }
+
+  throw new Error(lastError || 'Resend email failed');
+}
+
+function sendDeliveryDateRequestEmail(orderId, email, isReminder) {
+  var link = buildDeliveryDateLink(orderId, email);
+  var subject = (isReminder ? CFG.SUBJECT_EMAIL2 : CFG.SUBJECT_EMAIL1).replace('{{ORDER}}', orderId);
+  var html = buildEmailHtml(orderId, link, isReminder);
+  return sendResendEmail(email, subject, html);
 }
 
 
@@ -442,9 +536,8 @@ function autoSendDeliveryRequest(ordersSheet, orderRow, preRead) {
   if (sentVal.indexOf('Email 1 Sent') !== -1) return false;  // already sent
 
   try {
-    var link = CFG.BASE_URL + '/bezorgdatum?order=' + orderId + '&email=' + encodeURIComponent(email);
-    GmailApp.sendEmail(email, CFG.SUBJECT_EMAIL1.replace('{{ORDER}}', orderId), '', { htmlBody: buildEmailHtml(orderId, link, false), name: CFG.SENDER_NAME });
-    Utilities.sleep(100);  // reduce burst rate when many orders complete in one run
+    sendDeliveryDateRequestEmail(orderId, email, false);
+    Utilities.sleep(125);  // reduce burst rate when many orders complete in one run
     var newLog = (sentVal ? sentVal + ' | ' : '') + 'Email 1 Sent ' + nowStamp() + ' (auto)';
     ordersSheet.getRange(orderRow, OC.SENT_LOG).setValue(newLog);
     Logger.log('Auto Email 1 sent for order ' + orderId);
@@ -573,6 +666,7 @@ var MAX_EMAILS_PER_CATCHUP = 40;
  * a large allocation completes many orders at once.
  */
 function catchUpDeliveryRequests() {
+  var catchupStartMs = new Date().getTime();
   var sheet = getOrdersSheet();
   if (!sheet) return;
   var lastRow  = sheet.getLastRow();
@@ -613,6 +707,10 @@ function catchUpDeliveryRequests() {
   for (var i = 0; i < nRows; i++) {
     if (emailsSentThisRun >= MAX_EMAILS_PER_CATCHUP) {
       Logger.log('catchUpDeliveryRequests: per-run cap (' + MAX_EMAILS_PER_CATCHUP + ') reached — remaining rows picked up on next hourly pass.');
+      break;
+    }
+    if (!stillHasBudget(catchupStartMs, CFG.MAX_CATCHUP_RUNTIME_MS)) {
+      Logger.log('catchUpDeliveryRequests: time budget reached after ' + emailsSentThisRun + ' email(s). Remaining rows picked up on next hourly pass.');
       break;
     }
     if (String(verwerkt[i][0] || '').trim().toUpperCase() !== 'YES') continue;
@@ -659,6 +757,7 @@ function catchUpDeliveryRequests() {
  * @returns {number}               Count of orders that became fully allocated (YES) this run
  */
 function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
+  var allocationStartMs = new Date().getTime();
   var triggerCell   = actionSheet.getRange(actionRow, AC.TRIGGER);
   var resultCell    = actionSheet.getRange(actionRow, AC.RESULT);
   var timestampCell = actionSheet.getRange(actionRow, AC.TIMESTAMP);
@@ -767,9 +866,14 @@ function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
   var changed         = false;
   var newlyFullRows   = [];  // ← track rows that just became VERWERKT=YES (NEW v2.2)
   var batchDirty      = {};  // row index → true when Q (BATCH_DATE) was updated this run
+  var stoppedEarly    = false;
 
   for (var i = 0; i < nRows; i++) {
     if (balance <= 0) break;
+    if (!stillHasBudget(allocationStartMs, CFG.MAX_ALLOCATION_MS_PER_PRODUCT)) {
+      stoppedEarly = true;
+      break;
+    }
 
     var qtyStr  = qtyVals[i][0];
     var prodStr = prodVals[i][0];
@@ -850,6 +954,11 @@ function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
     newlyAllocated += needed;
     ordersUpdated++;
     changed = true;
+
+    if (ordersUpdated >= CFG.MAX_ALLOC_ORDERS_PER_PRODUCT_RUN && balance > 0) {
+      stoppedEarly = true;
+      break;
+    }
   }
 
   if (changed) {
@@ -880,6 +989,7 @@ function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
   if (skippedInsuff > 0) msg += ' ' + skippedInsuff + ' orders skipped (insufficient balance).';
   if (balance > 0) msg += ' Remaining balance: ' + balance + ' units.';
   else msg += ' Balance fully used.';
+  if (stoppedEarly) msg += ' Paused for Apps Script time/batch safety; remaining balance resumes on the next scheduled pass.';
   if (newlyFullRows.length > 0) {
     msg += ' \ud83d\udce7 ' + newlyFullRows.length + ' order(s) newly completed \u2014 delivery date step runs after allocation (catch-up).';
   }
@@ -888,7 +998,7 @@ function runAllocation(actionSheet, actionRow, ss, silent, balanceOverride) {
 
   // Emails are sent from catchUpDeliveryRequests() (called by handleStockUpdate,
   // handleAllocationTrigger, scanAndAllocatePending) so large batches do not hit
-  // Gmail rate limits or the 6-minute execution cap mid-loop.
+  // provider throttling or the 6-minute execution cap mid-loop.
 
   return newlyFullRows.length;
 }
@@ -942,6 +1052,7 @@ function handleAllocationTrigger(actionSheet, actionRow, ss) {
  * Also safe to run manually from the custom menu.
  */
 function scanAndAllocatePending() {
+  var scanStartMs = new Date().getTime();
   var ss          = SpreadsheetApp.getActiveSpreadsheet();
   var actionSheet = getActionSheet(ss);
   if (!actionSheet) return;
@@ -978,6 +1089,10 @@ function scanAndAllocatePending() {
   var totalNewlyFull = 0;
   try {
     for (var i = 0; i < pending.length; i++) {
+      if (!stillHasBudget(scanStartMs, CFG.MAX_SCAN_RUNTIME_MS)) {
+        Logger.log('scanAndAllocatePending: time budget reached after ' + i + ' product(s); remaining products resume next scheduled pass.');
+        break;
+      }
       try {
         // Pass available as the balance override so runAllocation uses the exact
         // B − C value computed above — avoids a redundant re-read inside the function.
@@ -1021,8 +1136,7 @@ function handleEmailTrigger(sheet, row) {
   if (dateVal !== '') return;                           // already has a date
 
   try {
-    var link = CFG.BASE_URL + '/bezorgdatum?order=' + orderId + '&email=' + encodeURIComponent(email);
-    GmailApp.sendEmail(email, CFG.SUBJECT_EMAIL1.replace('{{ORDER}}', orderId), '', { htmlBody: buildEmailHtml(orderId, link, false), name: CFG.SENDER_NAME });
+    sendDeliveryDateRequestEmail(orderId, email, false);
     sheet.getRange(row, OC.SENT_LOG).setValue('Email 1 Sent ' + nowStamp());
   } catch(err) {
     sheet.getRange(row, OC.SENT_LOG).setValue('Failed: ' + err.message);
@@ -1110,7 +1224,7 @@ function checkFollowUps() {
   // which would cause row-number misalignment for any concurrent writes).
   // The daily jobs flag is cleared by runDailyJobs when it finishes.
   var props = PropertiesService.getScriptProperties();
-  if (props.getProperty(DAILY_JOBS_FLAG)) {
+  if (isDailyJobsRunning(props)) {
     Logger.log('checkFollowUps skipped — runDailyJobs is active. Will resume on next hourly pass.');
     return;
   }
@@ -1177,11 +1291,10 @@ function checkFollowUps() {
     if (stage === 'email1' && hoursSince >= CFG.HOURS_BEFORE_REMINDER) {
       if (email) {
         try {
-          var link = CFG.BASE_URL + '/bezorgdatum?order=' + orderId + '&email=' + encodeURIComponent(email);
-          GmailApp.sendEmail(email, CFG.SUBJECT_EMAIL2.replace('{{ORDER}}', orderId), '', { htmlBody: buildEmailHtml(orderId, link, true), name: CFG.SENDER_NAME });
+          sendDeliveryDateRequestEmail(orderId, email, true);
           newSent += ' | Email 2 Sent ' + stamp;
         } catch(err) {
-          newSent += ' | Email 2 Failed ' + stamp;
+          newSent += ' | Email 2 Failed ' + stamp + ': ' + shortLog(err.message, 120);
         }
       }
       if (phone) {
@@ -1625,10 +1738,42 @@ function exportStofstaalFile(manual) {
 // checkFollowUps reads this flag and skips to prevent concurrent row-deleting exports
 // from racing with allocation writes and catchUpDeliveryRequests.
 var DAILY_JOBS_FLAG = 'DAILY_JOBS_RUNNING';
+var DAILY_JOBS_FLAG_MAX_AGE_MS = 20 * 60 * 1000;
+
+function markDailyJobsRunning(props) {
+  props = props || PropertiesService.getScriptProperties();
+  props.setProperty(DAILY_JOBS_FLAG, new Date().toISOString());
+}
+
+function clearDailyJobsRunning(props) {
+  props = props || PropertiesService.getScriptProperties();
+  props.deleteProperty(DAILY_JOBS_FLAG);
+}
+
+function isDailyJobsRunning(props) {
+  props = props || PropertiesService.getScriptProperties();
+  var startedRaw = props.getProperty(DAILY_JOBS_FLAG);
+  if (!startedRaw) return false;
+
+  var started = new Date(startedRaw);
+  if (!startedRaw || isNaN(started.getTime())) {
+    props.deleteProperty(DAILY_JOBS_FLAG);
+    Logger.log('Cleared legacy/stale daily jobs flag: ' + startedRaw);
+    return false;
+  }
+
+  if (elapsedMs(started.getTime()) > DAILY_JOBS_FLAG_MAX_AGE_MS) {
+    props.deleteProperty(DAILY_JOBS_FLAG);
+    Logger.log('Cleared stale daily jobs flag after timeout: started ' + startedRaw);
+    return false;
+  }
+
+  return true;
+}
 
 function runDailyJobs() {
   var props = PropertiesService.getScriptProperties();
-  props.setProperty(DAILY_JOBS_FLAG, '1');
+  markDailyJobsRunning(props);
   Logger.log('runDailyJobs started: ' + nowStamp());
   try {
     // Order matters: scanAndAllocatePending can use almost the full 6-minute Apps Script
@@ -1644,7 +1789,7 @@ function runDailyJobs() {
   } finally {
     // Must always clear: if the run hits the 6-minute limit mid-scan, checkFollowUps
     // would otherwise stay blocked until someone clears the property manually.
-    props.deleteProperty(DAILY_JOBS_FLAG);
+    clearDailyJobsRunning(props);
   }
   Logger.log('runDailyJobs finished: ' + nowStamp());
 }
@@ -1659,7 +1804,7 @@ function runDailyJobs() {
 function runMidMorningExportCatchup() {
   if (!isWorkday()) { Logger.log('runMidMorningExportCatchup skipped — weekend.'); return; }
   var props = PropertiesService.getScriptProperties();
-  props.setProperty(DAILY_JOBS_FLAG, '1');
+  markDailyJobsRunning(props);
   Logger.log('runMidMorningExportCatchup started: ' + nowStamp());
   try {
     // Same as runDailyJobs: export before scan so a long scan does not time out before Excel.
@@ -1667,7 +1812,7 @@ function runMidMorningExportCatchup() {
     try { exportFulfillmentFile(false); } catch(e) { Logger.log('runMidMorning export: ' + e.message); }
     try { scanAndAllocatePending(); } catch(e) { Logger.log('runMidMorning scan: ' + e.message); }
   } finally {
-    props.deleteProperty(DAILY_JOBS_FLAG);
+    clearDailyJobsRunning(props);
   }
   Logger.log('runMidMorningExportCatchup finished: ' + nowStamp());
 }

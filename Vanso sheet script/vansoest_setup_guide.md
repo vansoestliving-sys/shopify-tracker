@@ -85,7 +85,12 @@ This keeps the available balance accurate so new orders are never over-allocated
    - `FULFILLMENT_EMAIL` → actual fulfillment center email
    - `N8N_STOCK_SECRET` → note this value (enter the same in n8n)
    - `WA_WEBHOOK_URL` → confirm correct (already set to n8n.vansoestliving.com)
-6. Click Save (Ctrl+S)
+6. Add the Resend API key in Apps Script:
+   - Apps Script → Project Settings → Script properties → Add script property
+   - Property: `RESEND_API_KEY`
+   - Value: your subscribed Resend API key (`re_...`)
+   - Email 1 and Email 2 delivery-date request emails use this key instead of Gmail.
+7. Click Save (Ctrl+S)
 
 ### Step 2 — Set up the onEdit installable trigger
 
@@ -107,7 +112,7 @@ In Apps Script editor → click the ⏰ Triggers icon (left sidebar) → + Add T
 4. Authorize when prompted
 5. A confirmation popup appears:
    - `runDailyJobs` → every day 08:00 Amsterdam
-   - `checkFollowUps` → every hour (skips weekends automatically)
+   - `checkFollowUps` → every hour (allocation + emails + WhatsApp, all days)
 
 > ✅ You only need to run this once. If triggers get duplicated or lost, run it again — it removes old ones first.
 
