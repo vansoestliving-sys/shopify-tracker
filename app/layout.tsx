@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Poppins } from 'next/font/google'
 import { Toaster } from 'react-hot-toast'
+import { PublicTrackingHelpWidget } from '@/components/TrackingHelpWidget'
 import './globals.css'
 
 const poppins = Poppins({ 
@@ -53,6 +54,7 @@ export default function RootLayout({
     <html lang="nl">
       <body className={`${poppins.variable} ${poppins.className}`}>
         {children}
+        <PublicTrackingHelpWidget />
         <Toaster position="top-right" />
       </body>
     </html>
