@@ -14,6 +14,8 @@
 //      cannot start too many heavy products and hit the 360s Apps Script limit.
 //      checkFollowUps also shares one trigger budget across allocation, catch-up
 //      emails, and reminders so it pauses cleanly and resumes next hour.
+//    • v2.4.2: Pending-stock scans rotate by oldest product run timestamp first
+//      so high-available no-progress rows cannot starve products behind them.
 //
 //  NEW IN v2.3  (fixes three bugs from v2.2):
 //    • FIXED: ScriptApp.getProjectTriggers permission error in doPost.
@@ -447,6 +449,27 @@ function laterDate(a, b) {
   if (!a) return b;
   if (!b) return a;
   return a > b ? a : b;
+}
+
+function timestampSortMs(value) {
+  if (!value) return 0;
+  if (value instanceof Date && !isNaN(value.getTime())) return value.getTime();
+
+  var raw = String(value || '').trim();
+  if (!raw) return 0;
+
+  var parsed = new Date(raw);
+  if (!isNaN(parsed.getTime())) return parsed.getTime();
+
+  var m = raw.match(/(\d{1,2})-(\d{1,2})-(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+  if (!m) return 0;
+  return new Date(
+    Number(m[3]),
+    Number(m[2]) - 1,
+    Number(m[1]),
+    Number(m[4] || 0),
+    Number(m[5] || 0)
+  ).getTime();
 }
 
 
@@ -1090,13 +1113,21 @@ function scanAndAllocatePending(maxRuntimeMsOverride, skipCatchUp) {
   var nameVals  = actionSheet.getRange(ACTION_DATA_ROW, AC.PRODUCT,   nRows, 1).getValues();
   var stockVals = actionSheet.getRange(ACTION_DATA_ROW, AC.STOCK,     nRows, 1).getValues();
   var allocVals = actionSheet.getRange(ACTION_DATA_ROW, AC.ALLOCATED, nRows, 1).getValues();
+  var tsVals    = actionSheet.getRange(ACTION_DATA_ROW, AC.TIMESTAMP, nRows, 1).getValues();
 
   var pending = [];
   for (var r = 0; r < nRows; r++) {
     var productName = String(nameVals[r][0] || '').trim();
     if (!productName) continue;
     var available = (Number(stockVals[r][0]) || 0) - (Number(allocVals[r][0]) || 0);
-    if (available > 0) pending.push({ name: productName, available: available, row: r + ACTION_DATA_ROW });
+    if (available > 0) {
+      pending.push({
+        name: productName,
+        available: available,
+        row: r + ACTION_DATA_ROW,
+        lastRunMs: timestampSortMs(tsVals[r][0]),
+      });
+    }
   }
 
   if (!pending.length) {
@@ -1104,10 +1135,10 @@ function scanAndAllocatePending(maxRuntimeMsOverride, skipCatchUp) {
     return;
   }
 
-  // Heavy "draaifunctie" allocation scans many rows but often skips until a chair
-  // exists in ALLOC_DATA. Process normal products first so the hourly pass makes
-  // useful progress before spending time on accessory-link checks.
+  // Rotate by oldest run first. This prevents high-available no-progress rows
+  // from repeatedly consuming the per-run product cap and starving later rows.
   pending.sort(function(a, b) {
+    if (a.lastRunMs !== b.lastRunMs) return a.lastRunMs - b.lastRunMs;
     var aAccessory = /draaifunctie/i.test(a.name);
     var bAccessory = /draaifunctie/i.test(b.name);
     if (aAccessory !== bAccessory) return aAccessory ? 1 : -1;
